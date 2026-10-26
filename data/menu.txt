@@ -1,0 +1,42 @@
+# MENU TABLE (sample dishes: edit freely)
+# Edit this file in Notepad. One record per line. Columns are separated by | (do not use | inside a value).
+# Lines starting with # are notes and are ignored. Save as UTF-8 (File > Save As > Encoding: UTF-8).
+# restaurant_id must match an id in restaurants.txt. price in pesos (numbers only).
+# image = file name inside assets/img/menu/ (blank = placeholder). popular = yes or no.
+id|restaurant_id|name|description|price|image|popular
+1|r01|Tapsilog|Beef tapa, garlic rice and a fried egg.|149||yes
+2|r01|Longsilog|Sweet longganisa, garlic rice and egg.|139||no
+3|r01|Chicken Teriyaki Rice|Glazed chicken over steamed rice.|159||no
+4|r02|1-pc Fried Chicken with Rice|Crispy, juicy and with gravy.|99||yes
+5|r02|Chicken Inasal Paa|Grilled leg quarter with java rice.|169||no
+6|r02|6-pc Chicken Wings|Garlic parmesan or buffalo.|229||no
+7|r03|Classic Cheeseburger|Beef patty, cheese, pickles, house sauce.|89||yes
+8|r03|Double Bacon Burger|Two patties, bacon and cheddar.|189||no
+9|r03|Large Fries|Crispy fries with sea salt.|79||no
+10|r04|Hawaiian Pizza 10 inch|Ham, pineapple and mozzarella.|299||yes
+11|r04|Pepperoni Pizza 12 inch|Loaded with pepperoni.|429||no
+12|r04|Garlic Bread|Toasted with garlic butter.|99||no
+13|r05|Sinigang na Baboy|Sour tamarind soup with pork and veggies.|289||yes
+14|r05|Kare-Kare|Oxtail in peanut sauce with bagoong.|349||no
+15|r05|Lechon Kawali|Crispy pork belly with liver sauce.|259||no
+16|r06|Beef Mami|Egg noodles in rich beef broth.|149||yes
+17|r06|Pancit Malabon|Thick noodles with seafood toppings.|189||no
+18|r06|Lomi|Thick, hearty noodle soup.|139||no
+19|r07|Wintermelon Milk Tea|Large, with pearls.|99||yes
+20|r07|Brown Sugar Boba|Fresh milk and brown sugar pearls.|129||no
+21|r07|Iced Spanish Latte|Espresso with sweet milk.|139||no
+22|r08|Leche Flan|Smooth caramel custard.|89||yes
+23|r08|Ube Cheesecake|Creamy ube on a graham crust.|159||no
+24|r08|Mango Graham Float|Layers of mango, cream and graham.|199||no
+25|r09|Adobo Rice Bowl|Pork adobo over garlic rice.|159||yes
+26|r09|Sizzling Sisig|Served on a hot plate with egg.|199||no
+27|r09|Pancit Canton|Stir-fried noodles with veggies.|179||no
+28|r10|Spicy Chicken Sandwich|Crispy chicken with spicy mayo.|129||yes
+29|r10|2-pc Chicken Meal|With rice and a drink.|179||no
+30|r10|Chicken Bucket 6 pcs|Good for sharing.|449||no
+31|r11|Bangsilog|Daing na bangus, garlic rice and egg.|159||yes
+32|r11|Tocilog|Sweet tocino, garlic rice and egg.|139||no
+33|r11|Liempo Rice|Grilled pork belly with rice.|169||no
+34|r12|Halo-Halo Special|Shaved ice, ube, leche flan and more.|149||yes
+35|r12|Turon 3 pcs|Banana and langka spring rolls.|69||no
+36|r12|Buko Pandan|Young coconut and pandan jelly.|99||no

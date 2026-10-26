@@ -1,0 +1,13 @@
+# CATEGORIES TABLE
+# Edit this file in Notepad. One record per line. Columns are separated by | (do not use | inside a value).
+# Lines starting with # are notes and are ignored. Save as UTF-8 (File > Save As > Encoding: UTF-8).
+# icon must be one of: rice, drumstick, burger, pizza, utensils, soup, coffee, cake, leaf, fish
+id|label|icon
+rice-meals|Rice Meals|rice
+chicken|Chicken|drumstick
+burgers|Burgers|burger
+pizza|Pizza|pizza
+filipino|Filipino|utensils
+noodles|Noodles|soup
+milk-tea|Milk Tea & Coffee|coffee
+desserts|Desserts|cake

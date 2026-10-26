@@ -1,0 +1,16 @@
+# USERS TABLE
+# Edit this file in Notepad. One record per line. Columns are separated by | (do not use | inside a value).
+# Lines starting with # are notes and are ignored. Save as UTF-8 (File > Save As > Encoding: UTF-8).
+# password_sha256 = SHA-256 hash of the password, never the plain password. Sample users all use the demo password in README.md.
+# phone = 11-digit PH mobile number starting with 09.
+name|email|password_sha256|phone|address|points|since
+Juan Dela Cruz|juan.delacruz@email.com|e57747716ef7852bf92307bd8b9e1e562c4aaabb5dc0a3eaf8bf533b4cf53bd0|09171234567|Maginhawa St, Teachers Village, Quezon City|1250|2025
+Andrea Reyes|andrea.reyes@email.com|e57747716ef7852bf92307bd8b9e1e562c4aaabb5dc0a3eaf8bf533b4cf53bd0|09181112233|Kalayaan Ave, Poblacion, Makati|640|2025
+Miguel Bautista|miguel.bautista@email.com|e57747716ef7852bf92307bd8b9e1e562c4aaabb5dc0a3eaf8bf533b4cf53bd0|09952223344|5th Ave, BGC, Taguig|2100|2024
+Kristine Garcia|kristine.garcia@email.com|e57747716ef7852bf92307bd8b9e1e562c4aaabb5dc0a3eaf8bf533b4cf53bd0|09663334455|España Blvd, Sampaloc, Manila|320|2026
+Paolo Mendoza|paolo.mendoza@email.com|e57747716ef7852bf92307bd8b9e1e562c4aaabb5dc0a3eaf8bf533b4cf53bd0|09174445566|East Capitol Dr, Kapitolyo, Pasig|980|2025
+Camille Flores|camille.flores@email.com|e57747716ef7852bf92307bd8b9e1e562c4aaabb5dc0a3eaf8bf533b4cf53bd0|09285556677|Shaw Blvd, Mandaluyong|150|2026
+Rafael Villanueva|rafael.villanueva@email.com|e57747716ef7852bf92307bd8b9e1e562c4aaabb5dc0a3eaf8bf533b4cf53bd0|09176667788|Ortigas Ave, Greenhills, San Juan|1720|2024
+Bea Castillo|bea.castillo@email.com|e57747716ef7852bf92307bd8b9e1e562c4aaabb5dc0a3eaf8bf533b4cf53bd0|09997778899|Gil Fernando Ave, Marikina|860|2025
+Carlo Ramos|carlo.ramos@email.com|e57747716ef7852bf92307bd8b9e1e562c4aaabb5dc0a3eaf8bf533b4cf53bd0|09158889900|Aguirre Ave, BF Homes, Parañaque|410|2026
+Jasmine Torres|jasmine.torres@email.com|e57747716ef7852bf92307bd8b9e1e562c4aaabb5dc0a3eaf8bf533b4cf53bd0|09209990011|Alabang-Zapote Rd, Las Piñas|2890|2023

@@ -1,0 +1,10 @@
+# local tooling
+.claude/
+__pycache__/
+*.pyc
+# half-written files from server.py updates
+data/*.tmp
+# OS clutter
+Thumbs.db
+desktop.ini
+.DS_Store

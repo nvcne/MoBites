@@ -1,0 +1,19 @@
+# ORDERS TABLE (new orders are added at the bottom by the app)
+# Edit this file in Notepad. One record per line. Columns are separated by | (do not use | inside a value).
+# Lines starting with # are notes and are ignored. Save as UTF-8 (File > Save As > Encoding: UTF-8).
+# items = menuId x quantity, separated by ;  e.g. 1x2;3x1 means 2 of item 1 and 1 of item 3.
+# status = pending, preparing, on-the-way, delivered or cancelled. placed_at = time in milliseconds (blank for old orders).
+# payment = cod (cash on delivery), gcash or card.
+id|email|restaurant_id|items|total|date|placed_at|status|address|payment
+MB-24051|juan.delacruz@email.com|r11|31x2;33x1|531|2026-10-24||delivered|Maginhawa St, Teachers Village, Quezon City|cod
+MB-24014|juan.delacruz@email.com|r03|7x1|153|2026-10-20||delivered|Maginhawa St, Teachers Village, Quezon City|gcash
+MB-23977|juan.delacruz@email.com|r04|10x1;12x1|452|2026-10-15||cancelled|Maginhawa St, Teachers Village, Quezon City|card
+MB-23940|juan.delacruz@email.com|r01|1x1|193|2026-10-09||delivered|Maginhawa St, Teachers Village, Quezon City|cod
+MB-23903|juan.delacruz@email.com|r07|19x2;21x1|371|2026-10-02||delivered|Maginhawa St, Teachers Village, Quezon City|gcash
+MB-23866|juan.delacruz@email.com|r06|16x1|203|2026-09-25||delivered|Maginhawa St, Teachers Village, Quezon City|cod
+MB-23829|juan.delacruz@email.com|r05|13x1;15x1|592|2026-09-12||delivered|Maginhawa St, Teachers Village, Quezon City|card
+MB-23792|juan.delacruz@email.com|r02|4x1|153|2026-09-03||delivered|Maginhawa St, Teachers Village, Quezon City|gcash
+MB-23755|juan.delacruz@email.com|r09|25x1;27x1|402|2026-08-22||cancelled|Maginhawa St, Teachers Village, Quezon City|cod
+MB-23718|juan.delacruz@email.com|r08|22x2|222|2026-08-10||delivered|Maginhawa St, Teachers Village, Quezon City|cod
+MB-23681|juan.delacruz@email.com|r10|28x2;30x1|781|2026-07-28||delivered|Maginhawa St, Teachers Village, Quezon City|gcash
+MB-23644|juan.delacruz@email.com|r12|34x2|352|2026-07-14||delivered|Maginhawa St, Teachers Village, Quezon City|card
