@@ -13,7 +13,7 @@ const DB = {
   warnings: [],
 };
 
-const TABLES = ["categories", "restaurants", "menu", "users", "orders"];
+const TABLES = ["categories", "restaurants", "menu", "users", "orders", "team"];
 const NUMERIC = new Set(["lat", "lng", "rating", "reviews", "fee", "price", "total", "points", "placed_at"]);
 
 function parseTable(text, name) {

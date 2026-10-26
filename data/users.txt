@@ -4,7 +4,7 @@
 # password_sha256 = SHA-256 hash of the password, never the plain password. Sample users all use the demo password in README.md.
 # phone = 11-digit PH mobile number starting with 09.
 name|email|password_sha256|phone|address|points|since
-Juan Dela Cruz|juan.delacruz@email.com|e57747716ef7852bf92307bd8b9e1e562c4aaabb5dc0a3eaf8bf533b4cf53bd0|09171234567|Maginhawa St, Teachers Village, Quezon City|1250|2025
+Pedro P. (Penduko) Dinorobo|pedro.dinorobo@email.com|e57747716ef7852bf92307bd8b9e1e562c4aaabb5dc0a3eaf8bf533b4cf53bd0|09171234567|Maginhawa St, Teachers Village, Quezon City|1250|2025
 Andrea Reyes|andrea.reyes@email.com|e57747716ef7852bf92307bd8b9e1e562c4aaabb5dc0a3eaf8bf533b4cf53bd0|09181112233|Kalayaan Ave, Poblacion, Makati|640|2025
 Miguel Bautista|miguel.bautista@email.com|e57747716ef7852bf92307bd8b9e1e562c4aaabb5dc0a3eaf8bf533b4cf53bd0|09952223344|5th Ave, BGC, Taguig|2100|2024
 Kristine Garcia|kristine.garcia@email.com|e57747716ef7852bf92307bd8b9e1e562c4aaabb5dc0a3eaf8bf533b4cf53bd0|09663334455|España Blvd, Sampaloc, Manila|320|2026

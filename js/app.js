@@ -9,7 +9,7 @@ const $ = (s, r = document) => r.querySelector(s);
 const $$ = (s, r = document) => [...r.querySelectorAll(s)];
 const esc = (s) => String(s ?? "").replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
 const peso = (n) => "₱" + Number(n).toLocaleString("en-PH", { minimumFractionDigits: Number.isInteger(+n) ? 0 : 2, maximumFractionDigits: 2 });
-const initials = (name) => name.split(/\s+/).map((p) => p[0]).join("").slice(0, 2).toUpperCase();
+const initials = (name) => { const w = name.split(/\s+/).filter((p) => /^[A-Za-zÀ-ÿ]/.test(p)); return ((w[0]?.[0] || "") + (w.length > 1 ? w[w.length - 1][0] : "")).toUpperCase(); };
 const firstName = (name) => name.split(/\s+/)[0];
 const ymd = (d) => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`; // local date, not UTC
 const fmtDate = (d) => new Date(d + "T12:00").toLocaleDateString("en-PH", { month: "short", day: "numeric", year: "numeric" });
@@ -125,6 +125,15 @@ function askToLogin(reason, next) {
     </div>`);
 }
 
+/** Yes/No pop-up. Resolves true only when the user confirms (closing it does nothing). */
+function confirmBox({ ic = "alert", title, text = "", yes, no = "Cancel", danger = false }) {
+  return new Promise((resolve) => {
+    const close = modal(`<div class="ring">${icon(ic, 28)}</div><h2 style="font-size:24px">${esc(title)}</h2>${text ? `<p class="muted">${text}</p>` : ""}
+      <div class="actions"><button class="btn ${danger ? "btn-danger" : "btn-primary"}" id="cfYes">${esc(yes)}</button><button class="btn btn-ghost" data-close>${esc(no)}</button></div>`);
+    $("#cfYes").onclick = () => { close(); resolve(true); };
+  });
+}
+
 function restaurantCard(r, u) {
   const fav = u && favorites(u).includes(r.id);
   const km = distanceKm(getLoc(), r);
@@ -141,10 +150,12 @@ function restaurantCard(r, u) {
   </a>`;
 }
 function bindFavButtons(root) {
-  $$("[data-fav]", root).forEach((b) => b.addEventListener("click", (e) => {
+  $$("[data-fav]", root).forEach((b) => b.addEventListener("click", async (e) => {
     e.preventDefault(); e.stopPropagation();
     const u = currentUser();
     if (!u) return askToLogin("Save your favorite spots");
+    if (currentPath() === "favorites" && favorites(u).includes(b.dataset.fav) &&
+      !await confirmBox({ ic: "heart", title: "Remove from favorites?", text: `${esc(restaurantById(b.dataset.fav)?.name)} will be removed from your saved list.`, yes: "Remove", danger: true })) return;
     const on = toggleFavorite(u, b.dataset.fav);
     b.classList.toggle("is-on", on);
     b.setAttribute("aria-pressed", on);
@@ -395,7 +406,7 @@ function renderChrome(path, u) {
   $$("[data-loc]").forEach((b) => b.onclick = () => openMapPicker());
   $("#footer").innerHTML = `<div class="wrap">
     <span><strong>MoBites</strong> · Your bites, on the move. Made in the Philippines.</span>
-    <nav aria-label="Footer"><a href="#/how">Help</a><a href="#/privacy">Privacy Policy</a><a href="#/terms">Terms of Service</a></nav>
+    <nav aria-label="Footer"><a href="#/about">About us</a><a href="#/how">Help</a><a href="#/privacy">Privacy Policy</a><a href="#/terms">Terms of Service</a></nav>
     <span>© 2026 MoBites</span></div>`;
 }
 
@@ -645,8 +656,7 @@ function pageAuth(_, query, mode) {
           <button class="${login ? "" : "is-active"}" data-go="#/signup${nq}" role="tab" aria-selected="${!login}">Sign up</button>
         </div>
         ${login ? `
-        <div class="demo-box"><span>${icon("user", 16)} <b>Presenting?</b> Use the demo account.</span><button type="button" class="btn btn-ghost btn-sm" id="demo">Fill demo account</button></div>
-        <form class="form" id="form" novalidate style="margin-top:18px">
+        <form class="form" id="form" novalidate>
           <div class="form-alert" id="alert">${icon("alert", 18)}<span></span></div>
           ${field({ id: "email", label: "Email address", type: "email", ph: "juan@email.com", rules: "required email", attrs: 'autocomplete="email"' })}
           ${field({ id: "password", label: "Password", type: "password", ph: "Your password", rules: "required", password: true, attrs: 'autocomplete="current-password"' })}
@@ -679,10 +689,6 @@ function pageAuth(_, query, mode) {
       const showAlert = (msg) => { alertBox.querySelector("span").textContent = msg; alertBox.classList.add("show"); };
       const finish = (name) => { toast(`${login ? "Welcome back" : "Welcome"}, ${firstName(name)}! You're now in Member view.`); location.hash = "#/" + next; };
       if (login) {
-        $("#demo", root).onclick = () => {
-          form.email.value = "juan.delacruz@email.com"; form.password.value = "Mobites#2026";
-          $$("[data-rules]", form).forEach((el) => checkField(el));
-        };
         $("#forgot", root).onclick = (e) => { e.preventDefault(); toast("If that email has an account, we sent a reset link.", "checkCircle"); };
         liveValidate(form);
         form.addEventListener("submit", async (e) => {
@@ -812,8 +818,10 @@ function pageCheckout() {
         $$("[data-inc]", root).forEach((b) => b.onclick = () => qty(b.dataset.inc, 1));
         $$("[data-dec]", root).forEach((b) => b.onclick = () => qty(b.dataset.dec, -1));
       };
-      const qty = (mid, d) => {
+      const qty = async (mid, d) => {
         const cart = getCart();
+        const emptying = d < 0 && cart.items[mid] === 1 && Object.keys(cart.items).length === 1;
+        if (emptying && !await confirmBox({ ic: "bag", title: "Empty your bag?", text: `Removing ${esc(itemById(mid).name)} will leave your bag empty.`, yes: "Remove item", danger: true })) return;
         cart.items[mid] = (cart.items[mid] || 0) + d;
         if (cart.items[mid] <= 0) delete cart.items[mid];
         if (!Object.keys(cart.items).length) { setCart({ r: null, items: {} }); render(); return; }
@@ -851,6 +859,9 @@ function pageCheckout() {
         if (!loc) { toast("Pin your delivery address first", "pin"); $("[data-pick]", root).focus(); return; }
         if (!validateForm(form)) { toast("Check the highlighted fields", "alert"); return; }
         const t = totals();
+        const payLabel = { cod: "Cash on delivery", gcash: "GCash", card: "Card" }[form.pay.value];
+        if (!await confirmBox({ ic: "bag", title: "Place your order?", yes: `Yes, place order · ${peso(t.total)}`, no: "Not yet",
+          text: `<b>${esc(r.name)}</b> · ${cartCount()} item${cartCount() > 1 ? "s" : ""}<br>${payLabel} · ${peso(t.total)}<br>Deliver to ${esc(loc.label)}` })) return;
         const cart = getCart();
         const order = {
           id: "MB-" + String(Date.now()).slice(-6), email: u.email, restaurant_id: r.id,
@@ -1080,7 +1091,12 @@ function pageRewards() {
         <div class="card offer-card">${icon("coffee", 26)}<b>Merienda deals</b><span class="muted small">Milk tea and desserts under ${peso(150)}.</span><a class="link-arrow" href="#/explore?cat=milk-tea">Browse ${icon("arrowRight", 14)}</a></div>
       </div>
     </div>`,
-    after(root) { $("#redeem", root).onclick = () => toast(`${peso(ready * 100)} reward added. It'll apply at checkout.`, "gift"); },
+    after(root) {
+      $("#redeem", root).onclick = async () => {
+        if (await confirmBox({ ic: "gift", title: `Redeem ${peso(ready * 100)} off?`, text: `This uses ${(ready * REWARD_STEP).toLocaleString()} of your points.`, yes: "Redeem" }))
+          toast(`${peso(ready * 100)} reward added. It'll apply at checkout.`, "gift");
+      };
+    },
   };
 }
 
@@ -1139,7 +1155,10 @@ function pageProfile() {
         store.set("notif_" + u.email, { ...store.get("notif_" + u.email, {}), [t.id]: t.checked });
         toast(`${t.closest(".toggle").querySelector("b").textContent} ${t.checked ? "on" : "off"}`);
       });
-      $("#logout", root).onclick = () => { logout(); toast("You've logged out. You're now in Guest view.", "logout"); location.hash = "#/"; };
+      $("#logout", root).onclick = async () => {
+        if (!await confirmBox({ ic: "logout", title: "Log out of MoBites?", text: cartCount() ? "Your bag will be emptied." : "You can log back in anytime.", yes: "Log out", danger: true })) return;
+        logout(); toast("You've logged out. You're now in Guest view.", "logout"); location.hash = "#/";
+      };
     },
   };
 }
@@ -1149,7 +1168,7 @@ function pagePrivacy() {
     <span class="eyebrow">${icon("shield", 16)} Privacy Policy</span>
     <h1 style="margin-top:8px">Your privacy matters to us.</h1>
     <p class="muted" style="margin-top:8px">Last updated: October 2026</p>
-    <div class="note">This is a sample policy for a school project (HCI, Group 1). MoBites is not a real business.</div>
+    <div class="note">Live Laugh Love ICT201</div>
     <div class="toc"><a class="chip" href="#/privacy" data-jump="p1">What we collect</a><a class="chip" href="#/privacy" data-jump="p2">How we use it</a><a class="chip" href="#/privacy" data-jump="p3">Your rights</a><a class="chip" href="#/privacy" data-jump="p4">Contact</a></div>
     <p style="margin-top:20px">MoBites follows the <b>Data Privacy Act of 2012 (Republic Act No. 10173)</b>. We only collect what we need to bring your food to you, and we never sell your personal information.</p>
     <h2 id="p1">1. What we collect</h2>
@@ -1171,7 +1190,7 @@ function pageTerms() {
     <span class="eyebrow">${icon("file", 16)} Terms of Service</span>
     <h1 style="margin-top:8px">The simple rules of MoBites.</h1>
     <p class="muted" style="margin-top:8px">Last updated: October 2026</p>
-    <div class="note">This is a sample for a school project (HCI, Group 1). MoBites is not a real business.</div>
+    <div class="note">Live Laugh Love ICT201</div>
     <div class="toc"><a class="chip" href="#/terms" data-jump="t1">Your account</a><a class="chip" href="#/terms" data-jump="t2">Orders & payment</a><a class="chip" href="#/terms" data-jump="t3">Cancellations</a><a class="chip" href="#/terms" data-jump="t4">Promos</a></div>
     <h2 id="t1">1. Your account</h2>
     <ul><li>You must be at least 18 years old, or have a parent's permission, to create an account.</li><li>Keep your password safe. You're responsible for orders made with your account.</li><li>Give us a real name, a working PH mobile number and an accurate address.</li></ul>
@@ -1186,6 +1205,37 @@ function pageTerms() {
     <p style="margin-top:28px"><a class="btn btn-primary" href="#/">Back to MoBites</a></p>
   </div>`, after: bindJump };
 }
+function pageAbout() {
+  const team = rows("team");
+  const photo = (m, i) => m.image
+    ? `<img src="assets/img/team/${esc(m.image)}" alt="${esc(m.name)}" loading="lazy" onerror="this.replaceWith(Object.assign(document.createElement('span'),{className:'initials',textContent:'${initials(m.name)}'}))">`
+    : `<span class="initials">${initials(m.name)}</span>`;
+  return { html: `<div class="wrap about">
+    <section class="about-hero">
+      <div>
+        <span class="eyebrow">${icon("sparkle", 16)} About us</span>
+        <h1>We're <span class="hl">SERVDLabs</span>.</h1>
+        <p class="lead">A small product studio that designs simple, friendly services for everyday Filipinos. We believe good technology should feel like your favorite carinderia: familiar, quick, and made with care.</p>
+        <p class="muted" style="margin-top:12px">MoBites is our first project: food delivery built around how Pinoys actually order, from pinning your exact address on a map to paying with cash or GCash.</p>
+      </div>
+      <div class="about-values">
+        <div class="card offer-card">${icon("heart", 26)}<b>Made for locals</b><span class="muted small">Local food, local language, local ways to pay.</span></div>
+        <div class="card offer-card">${icon("checkCircle", 26)}<b>Simple by design</b><span class="muted small">Fewer taps, clear steps, no confusion.</span></div>
+        <div class="card offer-card">${icon("bike", 26)}<b>Fair to everyone</b><span class="muted small">Good for customers, kitchens and riders.</span></div>
+      </div>
+    </section>
+    <section class="section" style="padding-top:24px">
+      <div class="section-head"><div><h2>Meet the team</h2><p class="muted">The people behind MoBites.</p></div></div>
+      <div class="team-grid">${team.map((m, i) => `
+        <article class="card member">
+          <div class="photo" data-tone="${i % 4}">${photo(m, i)}</div>
+          <h3>${esc(m.name)}</h3>
+          <p class="role">${esc(m.role)}</p>
+        </article>`).join("") || `<p class="muted">Add your team in data/team.txt.</p>`}</div>
+    </section>
+  </div>` };
+}
+
 function bindJump(root) {
   $$("[data-jump]", root).forEach((a) => a.onclick = (e) => { e.preventDefault(); document.getElementById(a.dataset.jump)?.scrollIntoView({ behavior: "smooth" }); });
 }
@@ -1204,6 +1254,7 @@ const ROUTES = [
   { re: /^signup$/, page: (m, q) => pageAuth(m, q, "signup"), guestOnly: true },
   { re: /^privacy$/, page: pagePrivacy },
   { re: /^terms$/, page: pageTerms },
+  { re: /^about$/, page: pageAbout },
   { re: /^cart$/, page: pageCheckout, member: "Log in to see your bag" },
   { re: /^orders$/, page: pageOrders, member: "Log in to see your orders" },
   { re: /^orders\/([\w-]+)$/, page: pageOrderDetail, member: "Log in to track your order" },
@@ -1232,7 +1283,7 @@ function render() {
   const app = $("#app");
   app.innerHTML = view.html;
   view.after?.(app);
-  const titles = { "": "Food delivery", explore: "Restaurants", r: "Menu", login: "Log in", signup: "Sign up", cart: "Checkout", orders: "Orders", favorites: "Favorites", rewards: "Rewards", profile: "My account", privacy: "Privacy Policy", terms: "Terms of Service", how: "How it works" };
+  const titles = { "": "Food delivery", explore: "Restaurants", r: "Menu", login: "Log in", signup: "Sign up", cart: "Checkout", orders: "Orders", favorites: "Favorites", rewards: "Rewards", profile: "My account", privacy: "Privacy Policy", terms: "Terms of Service", about: "About us", how: "How it works" };
   document.title = `MoBites · ${titles[path.split("/")[0]] || "Food delivery"}`;
   if (route?.scroll) requestAnimationFrame(() => document.getElementById(path)?.scrollIntoView({ behavior: "smooth" }));
   else if (path !== lastPath) window.scrollTo(0, 0);

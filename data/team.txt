@@ -1,0 +1,11 @@
+# TEAM TABLE (About us page)
+# Edit this file in Notepad. One record per line. Columns are separated by | (do not use | inside a value).
+# Lines starting with # are notes and are ignored. Save as UTF-8 (File > Save As > Encoding: UTF-8).
+# image = file name inside assets/img/team/ (e.g. max.jpg). Leave blank to show initials.
+# role = the title shown under the name (replace Role Title).
+name|role|image
+Max David Sapico|Role Title|
+Angela Rose Elleazar|Role Title|
+Breidan Robles|Role Title|
+Danielle Joyce Viyar|Role Title|
+Sydney Dy|Role Title|

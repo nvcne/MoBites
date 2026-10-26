@@ -15,7 +15,7 @@ Then open **http://127.0.0.1:5173**. Stop it with `Ctrl + C`.
 
 | | Value |
 |---|---|
-| Demo login | `juan.delacruz@email.com` / `Mobites#2026` (or click **Fill demo account**) |
+| Demo login | **Pedro P. (Penduko) Dinorobo**: `pedro.dinorobo@email.com` / `Mobites#2026` |
 | Promo code | `MOBICNE`: ₱50 off orders of ₱300 or more |
 | Test card | `4242 4242 4242 4242`, any future expiry (e.g. `12/29`), any CVC |
 
@@ -29,6 +29,7 @@ Then open **http://127.0.0.1:5173**. Stop it with `Ctrl + C`.
 | Restaurant photos | Put the file in `assets/img/restaurants/`, then type its name in the `image` column (e.g. `r01.jpg`) |
 | Dish photos | Put the file in `assets/img/menu/`, then type its name in the `image` column |
 | Hero photo on the landing page | `assets/img/hero.jpg` (replace the file, keep the name) |
+| About us: team names, role titles, photos | `data/team.txt`, with photos in `assets/img/team/` |
 
 Every `.txt` file starts with `#` notes that explain its columns. To get a restaurant's `lat` and `lng`, right-click the place in Google Maps and click the coordinates to copy them.
 
@@ -74,7 +75,8 @@ r01|Restaurant Name 01|rice-meals|...   ← one record per line, columns split b
 | Chart / progress | Monthly ₱ spending chart, delivery progress bar, rewards progress, level ring |
 | Status colors | Pending (yellow) · Preparing (tan) · On the way (purple) · Delivered (green) · Cancelled (red) |
 | Phone-friendly | Tested at 375px wide; bottom tab bar under 768px |
-| 3+ tables, 10+ records each | `restaurants.txt` (12), `menu.txt` (36), `users.txt` (10), `orders.txt` (12), plus `categories.txt` (8) |
+| 3+ tables, 10+ records each | `restaurants.txt` (12), `menu.txt` (36), `users.txt` (10), `orders.txt` (12), plus `categories.txt` (8) and `team.txt` (5) |
+| Confirmation pop-ups | Log out, place order, empty the bag, cancel order, redeem points, remove a favorite, switch restaurants |
 
 ## Location pinning
 
