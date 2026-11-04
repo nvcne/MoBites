@@ -29,7 +29,7 @@ const restaurantById = (id) => restaurants().find((r) => String(r.id) === String
 const itemById = (id) => menuItems().find((m) => String(m.id) === String(id));
 const categoryById = (id) => categories().find((c) => c.id === id) || { label: "Food", icon: "utensils" };
 const parseItems = (s) => String(s).split(";").filter(Boolean).map((p) => p.split("x").map(Number));
-const toneOf = (r) => restaurants().indexOf(r) % 4;
+const toneOf = (r) => Math.max(0, restaurants().findIndex((x) => x.id === r.id)) % 4;
 
 /* ---------- browser storage (sessions, bag, favorites, location) ---------- */
 const store = {
@@ -101,11 +101,11 @@ function toast(msg, ic = "checkCircle") {
   clearTimeout(toastTimer);
   toastTimer = setTimeout(() => t.classList.remove("show"), 2800);
 }
-function modal(html, cls = "") {
+function modal(html, cls = "", onClose) {
   const m = $("#modal");
   m.innerHTML = `<div class="dialog ${cls}" role="dialog" aria-modal="true">${html}</div>`;
   m.hidden = false;
-  const close = () => { m.hidden = true; m.innerHTML = ""; document.removeEventListener("keydown", onKey); };
+  const close = () => { m.hidden = true; m.innerHTML = ""; document.removeEventListener("keydown", onKey); onClose?.(); };
   const onKey = (e) => { if (e.key === "Escape") close(); };
   document.addEventListener("keydown", onKey);
   m.onclick = (e) => { if (e.target === m || e.target.closest("[data-close]")) close(); };
@@ -125,12 +125,12 @@ function askToLogin(reason, next) {
     </div>`);
 }
 
-/** Yes/No pop-up. Resolves true only when the user confirms (closing it does nothing). */
+/** Yes/No pop-up. Resolves true when the user confirms, false when they cancel or close it. */
 function confirmBox({ ic = "alert", title, text = "", yes, no = "Cancel", danger = false }) {
   return new Promise((resolve) => {
     const close = modal(`<div class="ring">${icon(ic, 28)}</div><h2 style="font-size:24px">${esc(title)}</h2>${text ? `<p class="muted">${text}</p>` : ""}
-      <div class="actions"><button class="btn ${danger ? "btn-danger" : "btn-primary"}" id="cfYes">${esc(yes)}</button><button class="btn btn-ghost" data-close>${esc(no)}</button></div>`);
-    $("#cfYes").onclick = () => { close(); resolve(true); };
+      <div class="actions"><button class="btn ${danger ? "btn-danger" : "btn-primary"}" id="cfYes">${esc(yes)}</button><button class="btn btn-ghost" data-close>${esc(no)}</button></div>`, "", () => resolve(false));
+    $("#cfYes").onclick = () => { resolve(true); close(); };
   });
 }
 
@@ -142,7 +142,7 @@ function restaurantCard(r, u) {
     <div class="media">${restaurantPic(r)}${r.badge ? `<span class="badge">${esc(r.badge)}</span>` : ""}</div>
     <button class="icon-btn fav ${fav ? "is-on" : ""}" data-fav="${r.id}" aria-label="${fav ? "Remove from" : "Save to"} favorites" aria-pressed="${!!fav}">${icon("heart", 18)}</button>
     <div class="body">
-      <div class="row"><h3>${esc(r.name)}</h3><span class="rating">${icon("star", 15)} ${Number(r.rating).toFixed(1)}</span></div>
+      <div class="row"><h3>${esc(r.name)}</h3><span class="rating">${icon("star", 15)} ${r.reviews ? Number(r.rating).toFixed(1) : "New"}</span></div>
       <p class="muted small">${esc(r.tags)} · ${esc(r.price)}</p>
       <div class="meta"><span>${icon("clock", 15)} ${esc(r.time)} min</span>${km != null ? `<span>${icon("pin", 15)} ${km.toFixed(1)} km</span>` : `<span>${icon("pin", 15)} ${esc(r.area)}</span>`}<span>${icon("bike", 15)} ${peso(r.fee)}</span></div>
       <span class="cta">View menu ${icon("arrowRight", 14)}</span>
@@ -181,11 +181,11 @@ function shortAddress(a = {}, fallback = "") {
   return [street, brgy, city].filter(Boolean).join(", ") || fallback.split(",").slice(0, 3).join(",");
 }
 
-function openMapPicker({ locate = false, onDone } = {}) {
-  const cur = getLoc();
+function openMapPicker({ locate = false, onDone, onPick, start: at, title = "Where should we deliver?", cta = "Deliver here" } = {}) {
+  const cur = onPick ? at : getLoc();
   const close = modal(`
     <div style="display:flex;justify-content:space-between;align-items:center;gap:12px">
-      <h2 style="font-size:22px">${icon("pin", 22)} Where should we deliver?</h2>
+      <h2 style="font-size:22px">${icon("pin", 22)} ${esc(title)}</h2>
       <button class="icon-btn" data-close aria-label="Close">${icon("x", 18)}</button>
     </div>
     <form class="map-search" id="mapSearch"><input id="mapQ" placeholder="Search street, barangay or building" aria-label="Search address" autocomplete="off"><button class="btn btn-primary btn-sm">${icon("search", 16)}</button></form>
@@ -195,10 +195,10 @@ function openMapPicker({ locate = false, onDone } = {}) {
       <div class="map-pin"><svg viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path d="M20 10c0 5-5.5 10.2-7.4 11.8a1 1 0 0 1-1.2 0C9.5 20.2 4 15 4 10a8 8 0 0 1 16 0"/><circle cx="12" cy="10" r="3" fill="#fff"/></svg></div>
       <button type="button" class="btn btn-ghost btn-sm map-locate" id="locate">${icon("locate", 16)} Use my location</button>
     </div>
-    <p class="small muted" style="margin-top:-6px">Drag the map so the pin sits on your door.</p>
+    <p class="small muted" style="margin-top:-6px">Drag the map so the pin sits on ${onPick ? "the exact spot" : "your door"}.</p>
     <div class="map-addr" aria-live="polite">${icon("pin", 20)}<div><b id="addrLabel">${esc(cur?.label || "Move the map to pick a spot")}</b><br><span class="small muted" id="addrHint">${cur ? "Saved location" : "We'll fill in the address for you"}</span></div></div>
-    <div class="field"><label for="detail">House no., unit, landmark <span class="muted">(optional)</span></label><input id="detail" value="${esc(cur?.detail || "")}" placeholder="e.g. Unit 4B, beside the sari-sari store" maxlength="80"></div>
-    <button class="btn btn-primary btn-block" id="confirmLoc">Deliver here ${icon("arrowRight", 16)}</button>`, "map-dialog");
+    <div class="field" ${onPick ? 'style="display:none"' : ""}><label for="detail">House no., unit, landmark <span class="muted">(optional)</span></label><input id="detail" value="${esc(cur?.detail || "")}" placeholder="e.g. Unit 4B, beside the sari-sari store" maxlength="80"></div>
+    <button class="btn btn-primary btn-block" id="confirmLoc">${esc(cta)} ${icon("arrowRight", 16)}</button>`, "map-dialog");
 
   const label = $("#addrLabel"), hint = $("#addrHint"), box = $("#mapBox");
   let picked = cur ? { ...cur } : null;
@@ -269,6 +269,7 @@ function openMapPicker({ locate = false, onDone } = {}) {
 
   $("#confirmLoc").onclick = () => {
     if (!picked?.label) { const c = map.getCenter(); picked = { lat: +c.lat.toFixed(6), lng: +c.lng.toFixed(6), label: "Pinned location" }; }
+    if (onPick) { close(); onPick(picked); return; }
     setLoc({ ...picked, detail: $("#detail").value.trim() });
     close();
     toast("Delivering to " + picked.label, "pin");
@@ -357,6 +358,8 @@ function bindPasswordToggles(root) {
 
 /* ---------- chrome: top bar, bottom bar, footer ---------- */
 function renderChrome(path, u) {
+  document.body.classList.toggle("is-admin", path === "admin" || path.startsWith("admin/"));
+  if (document.body.classList.contains("is-admin")) return renderAdminChrome(path);
   const active = (p) => (path === p || path.startsWith(p + "/") ? "is-active" : "");
   const count = cartCount();
   const loc = getLoc();
@@ -406,7 +409,7 @@ function renderChrome(path, u) {
   $$("[data-loc]").forEach((b) => b.onclick = () => openMapPicker());
   $("#footer").innerHTML = `<div class="wrap">
     <span><strong>MoBites</strong> · Your bites, on the move. Made in the Philippines.</span>
-    <nav aria-label="Footer"><a href="#/about">About us</a><a href="#/how">Help</a><a href="#/privacy">Privacy Policy</a><a href="#/terms">Terms of Service</a></nav>
+    <nav aria-label="Footer"><a href="#/about">About us</a><a href="#/how">Help</a><a href="#/privacy">Privacy Policy</a><a href="#/terms">Terms of Service</a><a href="#/admin">Admin</a></nav>
     <span>© 2026 MoBites</span></div>`;
 }
 
@@ -571,7 +574,7 @@ function pageRestaurant([id]) {
           ${r.badge ? `<span class="badge">${esc(r.badge)}</span>` : ""}
           <h1 style="font-size:clamp(28px,4vw,42px);margin-top:8px">${esc(r.name)}</h1>
           <p class="muted">${esc(r.tags)} · ${esc(r.price)} · ${esc(r.area)}</p>
-          <div class="facts"><span class="rating">${icon("star", 15)} ${r.rating} (${r.reviews})</span><span>${icon("clock", 16)} ${esc(r.time)} min</span>${km != null ? `<span>${icon("pin", 16)} ${km.toFixed(1)} km away</span>` : ""}<span>${icon("bike", 16)} ${peso(r.fee)} delivery</span></div>
+          <div class="facts"><span class="rating">${icon("star", 15)} ${r.reviews ? `${r.rating} (${r.reviews})` : "New"}</span><span>${icon("clock", 16)} ${esc(r.time)} min</span>${km != null ? `<span>${icon("pin", 16)} ${km.toFixed(1)} km away</span>` : ""}<span>${icon("bike", 16)} ${peso(r.fee)} delivery</span></div>
         </div>
         <button class="btn btn-ghost" data-fav="${r.id}" aria-pressed="${!!fav}">${icon("heart", 18)} ${fav ? "Saved" : "Save"}</button>
       </div>
@@ -896,6 +899,11 @@ function trackingBits(o) {
   return { st, idx, pct, timeline };
 }
 
+function riderLine(o) {
+  const s = rows("staff").find((x) => x.id === o.rider);
+  return s ? `<div class="addr-card" style="margin-bottom:14px"><span class="avatar" style="width:40px;height:40px;font-size:14px">${initials(s.name)}</span><span class="grow"><b>${esc(s.name)}</b><br><span class="small muted">Your rider · ${esc(s.vehicle || "rider")}${s.plate ? " · " + esc(s.plate) : ""}</span></span></div>` : "";
+}
+
 function pageOrderDetail([id]) {
   const u = currentUser();
   const o = userOrders(u).find((x) => x.id === id);
@@ -913,7 +921,7 @@ function pageOrderDetail([id]) {
             <div class="summary"><div class="line total"><span>Total (${{ cod: "Cash on delivery", gcash: "GCash", card: "Card" }[o.payment] || esc(o.payment)})</span><span>${peso(o.total)}</span></div></div>
           </section>
         </div>
-        <section class="panel"><h3>Live status</h3><div id="timeline"></div><div id="actions" style="display:grid;gap:10px;margin-top:8px"></div></section>
+        <section class="panel"><h3>Live status</h3>${riderLine(o)}<div id="timeline"></div><div id="actions" style="display:grid;gap:10px;margin-top:8px"></div></section>
       </div>
     </div>`,
     after(root) {
@@ -1276,6 +1284,8 @@ function render() {
   const route = ROUTES.find((r) => r.re.test(path));
   if (route?.member && !u) { location.replace("#/login?next=" + encodeURIComponent(path)); toast(route.member, "lock"); return; }
   if (route?.guestOnly && u) { location.replace("#/explore"); return; }
+  if (route?.admin && !currentAdmin()) { location.replace("#/admin/login?next=" + encodeURIComponent(path)); toast("Log in as admin first", "lock"); return; }
+  if (route?.adminGuest && currentAdmin()) { location.replace("#/admin"); return; }
   if (path === "" && u) { location.replace("#/explore"); return; }
 
   renderChrome(path, u);
@@ -1284,7 +1294,7 @@ function render() {
   app.innerHTML = view.html;
   view.after?.(app);
   const titles = { "": "Food delivery", explore: "Restaurants", r: "Menu", login: "Log in", signup: "Sign up", cart: "Checkout", orders: "Orders", favorites: "Favorites", rewards: "Rewards", profile: "My account", privacy: "Privacy Policy", terms: "Terms of Service", about: "About us", how: "How it works" };
-  document.title = `MoBites · ${titles[path.split("/")[0]] || "Food delivery"}`;
+  document.title = `MoBites · ${route?.title || titles[path.split("/")[0]] || "Food delivery"}`;
   if (route?.scroll) requestAnimationFrame(() => document.getElementById(path)?.scrollIntoView({ behavior: "smooth" }));
   else if (path !== lastPath) window.scrollTo(0, 0);
   lastPath = path;

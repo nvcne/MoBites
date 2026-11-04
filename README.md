@@ -2,6 +2,7 @@
 
 A Filipino food delivery website with **Notepad (.txt) files as the database**.
 It's presented from two points of view: a **guest** (not logged in) and a **member** (logged in).
+A third, staff-only view, the **admin page**, runs the business side: orders, riders, staff, restaurants and menus.
 
 ## Run it
 
@@ -16,6 +17,7 @@ Then open **http://127.0.0.1:5173**. Stop it with `Ctrl + C`.
 | | Value |
 |---|---|
 | Demo login | **Pedro P. (Penduko) Dinorobo**: `pedro.dinorobo@email.com` / `Mobites#2026` |
+| Admin login | Open **http://127.0.0.1:5173/#/admin** (or the **Admin** link in the footer): `admin@mobites.ph` / `Admin#2026` |
 | Promo code | `MOBICNE`: ₱50 off orders of ₱300 or more |
 | Test card | `4242 4242 4242 4242`, any future expiry (e.g. `12/29`), any CVC |
 
@@ -30,8 +32,26 @@ Then open **http://127.0.0.1:5173**. Stop it with `Ctrl + C`.
 | Dish photos | Put the file in `assets/img/menu/`, then type its name in the `image` column |
 | Hero photo on the landing page | `assets/img/hero.jpg` (replace the file, keep the name) |
 | About us: team names, role titles, photos | `data/team.txt`, with photos in `assets/img/team/` |
+| Riders and office staff | `data/staff.txt` (or the admin page: **Riders & staff → Hire someone**) |
+| Admin accounts | `data/admins.txt` (password stored as a SHA-256 hash) |
 
 Every `.txt` file starts with `#` notes that explain its columns. To get a restaurant's `lat` and `lng`, right-click the place in Google Maps and click the coordinates to copy them.
+
+## The admin page
+
+Log in at `#/admin` with the admin account above. It has its own top bar and tabs (it's for the MoBites team, not customers).
+
+| Tab | What you can do | File it changes |
+|---|---|---|
+| Dashboard | Today's orders and sales, free riders, orders by status, 7-day sales chart, top restaurants; assign riders to orders that need one | `orders.txt` |
+| Orders | Search and filter every order, change its status, assign a rider, view details, take a **New order** by phone | `orders.txt` |
+| Restaurants | Add, edit or remove a restaurant (pin it on the map), and add, edit or delete its dishes and bestseller tags | `restaurants.txt`, `menu.txt` |
+| Riders & staff | **Hire** riders, dispatchers, support and operations staff; set them Active, Off duty or On leave; let go or rehire | `staff.txt` |
+| Customers | Search customers and see their orders, total spent and points (passwords are never shown) | read only |
+| Categories | Add a food category with an icon, or delete one no restaurant uses | `categories.txt` |
+
+Safety rules built in: an order can't go **On the way** without a rider; a rider who is on a delivery can't be set off duty or let go; a restaurant with active orders can't be removed; cancelling, delivering, hiring, letting go and every delete ask for confirmation first.
+When the admin changes an order's status, its `placed_at` is cleared, so the demo clock stops moving it and the admin's choice sticks.
 
 ## The Notepad database: how it works
 
@@ -43,7 +63,7 @@ r01|Restaurant Name 01|rice-meals|...   ← one record per line, columns split b
 ```
 
 1. **Read:** the page downloads each `.txt` file, splits it into lines, then splits each line at `|` and matches the pieces to the header names (`js/db.js` → `parseTable`).
-2. **Write:** when you sign up or place an order, the page sends the record to `server.py`, which **adds a new line** to `users.txt` or `orders.txt`. Cancelling an order **rewrites that line** (`status` → `cancelled`).
+2. **Write:** when you sign up or place an order, the page sends the record to `server.py`, which **adds a new line** to `users.txt` or `orders.txt`. Cancelling an order **rewrites that line** (`status` → `cancelled`). The admin page adds, rewrites and **deletes** lines in the same way.
 3. **Without the server** (e.g. on GitHub Pages), the site still reads the `.txt` files, but new records are kept in the browser. The **Download orders.txt** button on the Orders page saves them as a real Notepad file.
 
 **Presentation tip:** place an order, then open `data/orders.txt` in Notepad. The new order is on the last line. Notepad doesn't refresh on its own, so close and reopen the file to see changes.
@@ -60,6 +80,7 @@ r01|Restaurant Name 01|rice-meals|...   ← one record per line, columns split b
 | Everything is text | `"149"` is text, not a number | Number columns are converted when the files are read |
 | No relationships | Deleting a restaurant leaves orders that point to it | Orders show "Removed restaurant" instead of crashing |
 | Anyone can read the files | On GitHub Pages, `yoursite/data/users.txt` is public | Passwords are stored as **SHA-256 hashes**, never as plain text. Still, only use fake accounts |
+| Admin login is checked in the browser | Someone who knows JavaScript could skip the login screen | Fine for a class demo. A real app checks the login on the server before any change |
 | Speed | Every read loads the whole file | Fine for hundreds of rows, but a real app would need a real database |
 | Caching | The browser may show an old copy of a file you just edited | `server.py` tells browsers not to cache the `.txt` files |
 
@@ -75,8 +96,8 @@ r01|Restaurant Name 01|rice-meals|...   ← one record per line, columns split b
 | Chart / progress | Monthly ₱ spending chart, delivery progress bar, rewards progress, level ring |
 | Status colors | Pending (yellow) · Preparing (tan) · On the way (purple) · Delivered (green) · Cancelled (red) |
 | Phone-friendly | Tested at 375px wide; bottom tab bar under 768px |
-| 3+ tables, 10+ records each | `restaurants.txt` (12), `menu.txt` (36), `users.txt` (10), `orders.txt` (12), plus `categories.txt` (8) and `team.txt` (5) |
-| Confirmation pop-ups | Log out, place order, empty the bag, cancel order, redeem points, remove a favorite, switch restaurants |
+| 3+ tables, 10+ records each | `restaurants.txt` (12), `menu.txt` (36), `users.txt` (10), `orders.txt` (18), `staff.txt` (12), plus `categories.txt` (8), `team.txt` (5) and `admins.txt` (2) |
+| Confirmation pop-ups | Log out, place order, empty the bag, cancel order, redeem points, remove a favorite, switch restaurants; admin: cancel/deliver an order, save a phone order, hire, let go, rehire, every delete, admin log out |
 
 ## Location pinning
 
@@ -96,6 +117,7 @@ data/*.txt          the Notepad database
 css/styles.css      theme and layout
 js/db.js            .txt reader/writer
 js/app.js           pages, navigation, forms, map picker
+js/admin.js         admin pages (#/admin)
 js/icons.js         outline icon set
 assets/img/         photos (restaurants/ and menu/ for your own)
 ```

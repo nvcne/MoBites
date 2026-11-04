@@ -1,0 +1,7 @@
+# ADMINS TABLE (who can open the admin dashboard at #/admin)
+# Edit this file in Notepad. One record per line. Columns are separated by | (do not use | inside a value).
+# Lines starting with # are notes and are ignored. Save as UTF-8 (File > Save As > Encoding: UTF-8).
+# password_sha256 = SHA-256 hash of the password. The demo admin password is in README.md.
+name|email|password_sha256|role
+Admin|admin@mobites.ph|b5af2beb9b7fd5aa4eb21b61925bd3856793e54e0a39052fbcfaf5b477fd07f3|Owner
+Ops Manager|ops@mobites.ph|b5af2beb9b7fd5aa4eb21b61925bd3856793e54e0a39052fbcfaf5b477fd07f3|Operations

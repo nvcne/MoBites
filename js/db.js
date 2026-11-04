@@ -13,7 +13,7 @@ const DB = {
   warnings: [],
 };
 
-const TABLES = ["categories", "restaurants", "menu", "users", "orders", "team"];
+const TABLES = ["categories", "restaurants", "menu", "users", "orders", "team", "staff", "admins"];
 const NUMERIC = new Set(["lat", "lng", "rating", "reviews", "fee", "price", "total", "points", "placed_at"]);
 
 function parseTable(text, name) {
@@ -42,6 +42,9 @@ function parseTable(text, name) {
 const localKey = (t) => "mb_db_" + t;
 function localRows(t) { try { return JSON.parse(localStorage.getItem(localKey(t)) || "[]"); } catch { return []; } }
 function saveLocalRows(t, rows) { try { localStorage.setItem(localKey(t), JSON.stringify(rows)); } catch { /* storage blocked */ } }
+// ids deleted while there's no server (the .txt file still has them, so hide them)
+function deletedIds(t) { try { return JSON.parse(localStorage.getItem(localKey(t) + "_deleted") || "[]"); } catch { return []; } }
+function saveDeletedIds(t, ids) { try { localStorage.setItem(localKey(t) + "_deleted", JSON.stringify(ids)); } catch { /* storage blocked */ } }
 
 async function loadDB() {
   await Promise.all(TABLES.map(async (t) => {
@@ -61,7 +64,8 @@ function rows(t) {
   const local = DB.server ? [] : localRows(t);
   const key = DB.tables[t].header[0];
   const ids = new Set(local.map((r) => String(r[key])));
-  return local.concat(DB.tables[t].rows.filter((r) => !ids.has(String(r[key]))));
+  const gone = new Set(DB.server ? [] : deletedIds(t));
+  return local.concat(DB.tables[t].rows.filter((r) => !ids.has(String(r[key])))).filter((r) => !gone.has(String(r[key])));
 }
 
 const cleanCell = (v) => String(v ?? "").replace(/\|/g, "/").replace(/[\r\n]+/g, " ").trim();
@@ -74,6 +78,8 @@ async function appendRow(t, row) {
     DB.tables[t].rows.unshift(row);
   } else {
     saveLocalRows(t, [row, ...localRows(t)]);
+    const key = DB.tables[t].header[0];
+    saveDeletedIds(t, deletedIds(t).filter((x) => x !== String(row[key])));
   }
 }
 
@@ -91,6 +97,18 @@ async function updateRow(t, id, changes) {
     const updated = { ...existing, ...changes };
     saveLocalRows(t, [updated, ...local.filter((x) => String(x[key]) !== String(id))]);
   }
+}
+
+async function deleteRow(t, id) {
+  const key = DB.tables[t].header[0];
+  if (DB.server) {
+    const r = await fetch("api/delete", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ table: t, id }) });
+    if (!r.ok) throw new Error("Could not delete from " + t + ".txt");
+  } else {
+    saveLocalRows(t, localRows(t).filter((x) => String(x[key]) !== String(id)));
+    saveDeletedIds(t, [...new Set([...deletedIds(t), String(id)])]);
+  }
+  DB.tables[t].rows = DB.tables[t].rows.filter((x) => String(x[key]) !== String(id));
 }
 
 /** Download a table as a Notepad-friendly .txt (UTF-8 with BOM, Windows line endings). */

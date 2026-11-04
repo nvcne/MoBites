@@ -14,7 +14,7 @@ from http.server import SimpleHTTPRequestHandler, ThreadingHTTPServer
 ROOT = os.path.dirname(os.path.abspath(__file__))
 DATA = os.path.join(ROOT, "data")
 PORT = 5173
-WRITABLE = {"orders", "users"}  # tables the website may write to
+WRITABLE = {"orders", "users", "restaurants", "menu", "categories", "staff"}  # tables the website may write to
 LOCK = threading.Lock()         # one write at a time (a .txt file has no locking of its own)
 
 
@@ -55,8 +55,22 @@ def append_row(name, row):
             os.fsync(f.fileno())
 
 
-def update_row(name, row_id, changes):
+def rewrite(path, lines):
     """Rewrite the file safely: write a temp copy, then swap it in (no half-written file)."""
+    tmp = path + ".tmp"
+    with open(tmp, "w", encoding="utf-8", newline="\r\n") as f:
+        f.write("\n".join(lines) + "\n")
+        f.flush()
+        os.fsync(f.fileno())
+    os.replace(tmp, path)
+
+
+def is_record(line, header, row_id):
+    cells = line.split("|")
+    return bool(line) and not line.startswith("#") and cells[0] == row_id and len(cells) == len(header)
+
+
+def update_row(name, row_id, changes):
     path = table_path(name)
     with LOCK:
         lines = read_lines(path)
@@ -64,21 +78,28 @@ def update_row(name, row_id, changes):
         found = False
         out = []
         for line in lines:
-            cells = line.split("|")
-            if line and not line.startswith("#") and cells[0] == row_id and len(cells) == len(header):
+            if is_record(line, header, row_id):
+                cells = line.split("|")
                 for col, val in changes.items():
                     if col in header and col != header[0]:
                         cells[header.index(col)] = clean(val)
                 line = "|".join(cells)
                 found = True
             out.append(line)
-        tmp = path + ".tmp"
-        with open(tmp, "w", encoding="utf-8", newline="\r\n") as f:
-            f.write("\n".join(out) + "\n")
-            f.flush()
-            os.fsync(f.fileno())
-        os.replace(tmp, path)
+        rewrite(path, out)
         return found
+
+
+def delete_row(name, row_id):
+    path = table_path(name)
+    with LOCK:
+        lines = read_lines(path)
+        header = header_of(lines)
+        out = [l for l in lines if not is_record(l, header, row_id)]
+        if len(out) == len(lines):
+            return False
+        rewrite(path, out)
+        return True
 
 
 class Handler(SimpleHTTPRequestHandler):
@@ -116,6 +137,9 @@ class Handler(SimpleHTTPRequestHandler):
                 return self.send_json(200, {"ok": True})
             if self.path == "/api/update":
                 ok = update_row(body["table"], str(body["id"]), body["changes"])
+                return self.send_json(200 if ok else 404, {"ok": ok})
+            if self.path == "/api/delete":
+                ok = delete_row(body["table"], str(body["id"]))
                 return self.send_json(200 if ok else 404, {"ok": ok})
             return self.send_json(404, {"error": "unknown endpoint"})
         except (ValueError, KeyError, StopIteration) as e:
