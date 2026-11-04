@@ -29,7 +29,9 @@ Then open **http://127.0.0.1:5173**. Stop it with `Ctrl + C`. To use another por
 
 These are the **only** accounts that can log in: one per role, each with its own password. The other sample customers and staff are there to fill the tables, so their password column is blank and they can't log in or reset a password. Riders hired from the admin page get their own temporary password.
 
-## Where to edit the restaurants (templates)
+## Where to edit the restaurants
+
+Groupmates: see **[GROUP_GUIDE.md](GROUP_GUIDE.md)** for the step-by-step way to add restaurants and menus and share them.
 
 | What | Where |
 |---|---|
@@ -151,7 +153,7 @@ r01|Restaurant Name 01|rice-meals|...   ← one record per line, columns split b
 | Chart / progress | Monthly ₱ spending chart, delivery progress bar, rewards progress, level ring |
 | Status colors | Pending (yellow) · Preparing (tan) · On the way (purple) · Delivered (green) · Cancelled (red) |
 | Phone-friendly | Tested at 375px wide; bottom tab bar under 768px |
-| 3+ tables, 10+ records each | `restaurants.txt` (12), `menu.txt` (36), `users.txt` (10), `orders.txt` (18), `staff.txt` (12), `feedback.txt` (10), plus `categories.txt` (8), `team.txt` (5), `messages.txt` (3) and `admins.txt` (2) |
+| 3+ tables, 10+ records each | `users.txt` (10), `staff.txt` (12), `restaurants.txt` and `menu.txt` (being filled in by the group: aim for 10+ each), plus `categories.txt` (8), `team.txt` (5) and `admins.txt` (1). `orders.txt`, `messages.txt` and `feedback.txt` start empty and fill up as people use the site |
 | Confirmation pop-ups | Log out, place order, wallet payment, empty the bag, cancel order, redeem points, remove a favorite, switch restaurants, change password, delete account, remove a number or payment method; rider: accept, pick up, deliver, log out; admin: cancel/deliver/edit an order, refund done, save a phone order, hire, let go, rehire, remove a photo, every delete, admin log out |
 
 ## Location pinning

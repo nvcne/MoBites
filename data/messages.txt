@@ -3,6 +3,3 @@
 # Lines starting with # are notes and are ignored. Save as UTF-8 (File > Save As > Encoding: UTF-8).
 # sender = customer or rider. sent_at = time in milliseconds.
 id|order_id|sender|text|sent_at
-M001|MB-24113|rider|Hello po! Papunta na ako sa inyo.|1793777000000
-M002|MB-24113|customer|Salamat po! Pakiiwan na lang sa guard.|1793777060000
-M003|MB-24113|rider|Sige po, noted.|1793777090000

@@ -70,7 +70,7 @@ function cartCount() { return Object.values(getCart().items).reduce((a, b) => a 
 function cartSubtotal(c = getCart()) { return Object.entries(c.items).reduce((s, [id, q]) => s + (itemById(id)?.price || 0) * q, 0); }
 
 const userOrders = (u) => rows("orders").filter((o) => o.email.toLowerCase() === u.email.toLowerCase());
-function favorites(u) { return store.get("favs_" + u.email, ["r01", "r05", "r07"]); }
+function favorites(u) { return store.get("favs_" + u.email, []); }
 function toggleFavorite(u, rid) {
   const f = favorites(u);
   const next = f.includes(rid) ? f.filter((x) => x !== rid) : f.concat(rid);
@@ -538,7 +538,7 @@ function pageHome() {
     <section class="section" style="padding-top:0"><div class="wrap">
       <div class="section-head"><div><h2>${loc ? "Malapit sa'yo" : "Popular right now"}</h2><p class="muted">${loc ? "Closest to " + esc(loc.label) : "Loved by hungry neighbors all over Metro Manila."}</p></div>
         <a class="link-arrow" href="#/explore">See all restaurants ${icon("arrowRight", 16)}</a></div>
-      <div class="grid">${popular.map((r) => restaurantCard(r, null)).join("")}</div>
+      <div class="grid">${popular.map((r) => restaurantCard(r, null)).join("") || `<div class="empty" style="grid-column:1/-1">${icon("store", 36)}<h3>Restaurants are coming soon!</h3><p>We're signing up local favorites. Balik ka mamaya.</p></div>`}</div>
     </div></section>
 
     <section class="section steps" id="how"><div class="wrap">
@@ -620,7 +620,8 @@ function pageExplore(_, query) {
         if (by[sort]) list = [...list].sort(by[sort]);
         $("#count", root).textContent = list.length ? `${list.length} ${list.length === 1 ? "restaurant" : "restaurants"}${cat === "all" ? "" : " · " + categoryById(cat).label}` : "";
         $("#results", root).innerHTML = list.length ? list.map((r) => restaurantCard(r, u)).join("")
-          : `<div class="empty" style="grid-column:1/-1">${icon("search", 36)}<h3>Wala pa, sorry!</h3><p>Try another dish or category.</p></div>`;
+          : restaurants().length ? `<div class="empty" style="grid-column:1/-1">${icon("search", 36)}<h3>Wala pa, sorry!</h3><p>Try another dish or category.</p></div>`
+          : `<div class="empty" style="grid-column:1/-1">${icon("store", 36)}<h3>Restaurants are coming soon!</h3><p>We're signing up local favorites. Balik ka mamaya.</p></div>`;
         bindFavButtons($("#results", root));
       };
       $("#q", root).addEventListener("input", (e) => { q = e.target.value; draw(); });
