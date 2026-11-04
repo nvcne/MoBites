@@ -13,8 +13,8 @@ const DB = {
   warnings: [],
 };
 
-const TABLES = ["categories", "restaurants", "menu", "users", "orders", "team", "staff", "admins"];
-const NUMERIC = new Set(["lat", "lng", "rating", "reviews", "fee", "price", "total", "points", "placed_at"]);
+const TABLES = ["categories", "restaurants", "menu", "users", "orders", "team", "staff", "admins", "messages", "feedback"];
+const NUMERIC = new Set(["lat", "lng", "rating", "reviews", "fee", "price", "total", "points", "placed_at", "sent_at"]);
 
 function parseTable(text, name) {
   const lines = text.replace(/^﻿/, "").split(/\r?\n/);   // strip Notepad BOM, handle CRLF
@@ -57,6 +57,18 @@ async function loadDB() {
     DB.server = r.ok && (await r.json()).ok === true;
   } catch { DB.server = false; }
   DB.warnings.forEach((w) => console.warn("[Notepad DB]", w));
+}
+
+/** Re-read tables from disk so changes made in another browser show up (live orders, chat). */
+async function refreshTables(list) {
+  if (!DB.server) return false;   // without the server, other tabs' changes arrive through localStorage
+  await Promise.all(list.map(async (t) => {
+    try {
+      const res = await fetch(`data/${t}.txt`, { cache: "no-store" });
+      if (res.ok) DB.tables[t] = parseTable(await res.text(), t);
+    } catch { /* offline for a moment; keep the old copy */ }
+  }));
+  return true;
 }
 
 /** All rows of a table: rows from the .txt file + rows saved in this browser (browser rows win). */
@@ -121,6 +133,22 @@ function exportTable(t, filterFn = () => true) {
   a.download = t + ".txt";
   a.click();
   setTimeout(() => URL.revokeObjectURL(a.href), 1000);
+}
+
+/** Shrink a photo in the browser, then save it in assets/img/<folder>/ (server) or keep it in the row itself (no server). */
+async function uploadPhoto(file, folder, name) {
+  if (!/^image\/(jpeg|png|webp)$/.test(file.type)) throw new Error("Use a JPG, PNG or WEBP photo.");
+  const img = await new Promise((ok, fail) => { const i = new Image(); i.onload = () => ok(i); i.onerror = () => fail(new Error("That photo couldn't be opened.")); i.src = URL.createObjectURL(file); });
+  const scale = Math.min(1, (DB.server ? 1200 : 480) / Math.max(img.width, img.height));
+  const c = document.createElement("canvas");
+  c.width = Math.round(img.width * scale); c.height = Math.round(img.height * scale);
+  c.getContext("2d").drawImage(img, 0, 0, c.width, c.height);
+  URL.revokeObjectURL(img.src);
+  const data = c.toDataURL("image/jpeg", DB.server ? 0.85 : 0.7);
+  if (!DB.server) return data;   // stored as text in the browser copy of the table
+  const r = await fetch("api/upload", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ folder, name, data }) });
+  if (!r.ok) throw new Error("Couldn't upload the photo. Is server.py still running?");
+  return (await r.json()).file;
 }
 
 async function sha256(text) {

@@ -16,7 +16,7 @@ function setAdmin(email) { memory.admin = email; if (email) store.set("admin", e
 const STAFF_ROLES = { rider: "Rider", dispatcher: "Dispatcher", support: "Customer support", operations: "Operations" };
 const STAFF_STATUS = { active: ["Active", "delivered"], "off-duty": ["Off duty", "pending"], "on-leave": ["On leave", "preparing"], inactive: ["Let go", "cancelled"] };
 const VEHICLES = { motorcycle: "Motorcycle", bicycle: "Bicycle", car: "Car" };
-const PAYMENTS = { cod: "Cash on delivery", gcash: "GCash", card: "Card" };
+const PAYMENTS = { cod: "Cash on delivery", gcash: "GCash", maya: "Maya" };   // for phone orders (cards are only added by the customer)
 const PRICE_LEVELS = { "₱": "₱ (budget)", "₱₱": "₱₱ (mid)", "₱₱₱": "₱₱₱ (premium)" };
 const CATEGORY_ICONS = ["rice", "drumstick", "burger", "pizza", "utensils", "soup", "coffee", "cake", "leaf", "fish"];
 const AREAS = ["Caloocan", "Las Piñas", "Makati", "Malabon", "Mandaluyong", "Manila", "Marikina", "Muntinlupa", "Navotas", "Parañaque", "Pasay", "Pasig", "Pateros", "Quezon City", "San Juan", "Taguig", "Valenzuela"];
@@ -45,7 +45,6 @@ Object.assign(RULES, {
   lat: (v) => (v.trim() !== "" && +v >= 4.5 && +v <= 21.5) || "Pin the restaurant on the map.",
   lng: (v) => (v.trim() !== "" && +v >= 116 && +v <= 127) || "Pin the restaurant on the map.",
   range: (v) => { const m = v.trim().match(/^(\d{1,3})\s*-\s*(\d{1,3})$/); return (m && +m[1] < +m[2]) || "Use a range in minutes, like 20-30."; },
-  photo: (v) => !v.trim() || /^[\w.-]+\.(jpe?g|png|webp)$/i.test(v.trim()) || "Use a file name like r13.jpg (jpg, png or webp).",
   plate: (v) => /^([A-Z]{3}\s?\d{3,4}|\d{3}\s?[A-Z]{3}|[A-Z]{2}\s?\d{4,5})$/i.test(v.trim()) || "Use a PH plate number, like NAB 1234 or 123 ABC.",
   address: (v) => v.trim().length >= 8 || "Enter the full address (street, barangay, city).",
   startDate: (v) => { const d = new Date(v + "T12:00"), days = (d - new Date()) / 864e5; return (!isNaN(d) && days > -31 && days < 61) || "Pick a start date within the next 60 days."; },
@@ -93,6 +92,50 @@ function barChart(points, label) {
   return `<div class="chart"><svg viewBox="0 0 ${W} ${H}" role="img" aria-label="${esc(label)}"><line x1="0" x2="${W}" y1="160" y2="160" stroke="var(--line)" stroke-width="2"/>${bars}</svg></div>`;
 }
 
+/** Email the customer about their order (real email when EmailJS is set up, demo inbox otherwise). */
+function notifyCustomer(o, subject, text) {
+  const c = userByEmail(o.email);
+  return sendMail({ to: o.email, name: c?.name || "", subject, message: `Hi ${firstName(c?.name || "there")},\n\n${text}\n\nMoBites` });
+}
+const refundText = (o) => `We're refunding ${peso(o.total)} to your ${payLabel(o.payment)}. It usually shows up in 3 to 5 banking days.`;
+
+/** Photo upload: shows a preview, shrinks the photo, saves it, and keeps the file name in a hidden form field. */
+const photoPicker = (id, label) => `
+  <div class="field"><label>${label} <span class="muted">(optional)</span></label>
+    <div class="photo-pick"><div class="photo-prev" id="${id}Prev"></div>
+      <div class="photo-btns"><input type="file" id="${id}File" accept="image/jpeg,image/png,image/webp" hidden data-nodraft>
+        <button type="button" class="btn btn-ghost btn-sm" id="${id}Btn">${icon("image", 16)} Upload photo</button>
+        <button type="button" class="btn btn-danger btn-sm" id="${id}Rm">Remove</button>
+        <span class="hint" id="${id}Hint"></span></div></div>
+    <input type="hidden" name="${id}"></div>`;
+function bindPhotoPicker(root, form, id, folder, nameFn, value, onChange) {
+  const input = form[id], file = $(`#${id}File`, root);
+  input.value = value || "";
+  const draw = () => {
+    const v = input.value;
+    $(`#${id}Prev`, root).innerHTML = pic(v, folder, "Photo preview", "image", 2);
+    $(`#${id}Rm`, root).hidden = !v;
+    $(`#${id}Hint`, root).textContent = !v ? "JPG, PNG or WEBP. We'll resize it for you." : /^data:/.test(v) ? "Saved in this browser (server.py isn't running)." : `Saved as assets/img/${folder}/${v}`;
+  };
+  $(`#${id}Btn`, root).onclick = () => file.click();
+  $(`#${id}Rm`, root).onclick = async () => {
+    if (!await confirmBox({ ic: "image", title: "Remove this photo?", text: "A placeholder will show until you upload a new one.", yes: "Remove", danger: true })) return;
+    input.value = ""; draw(); onChange?.();
+  };
+  file.onchange = async () => {
+    const f = file.files[0];
+    file.value = "";
+    if (!f) return;
+    if (f.size > 15e6) return toast("That photo is too big. Pick one under 15 MB.", "alert");
+    $(`#${id}Hint`, root).textContent = "Uploading…";
+    try { input.value = await uploadPhoto(f, folder, nameFn()); toast("Photo uploaded. Save to keep it.", "image"); }
+    catch (e) { toast(e.message, "alert"); }
+    draw(); onChange?.();
+  };
+  draw();
+  return { set(v) { input.value = v || ""; draw(); } };
+}
+
 /* ---------- order controls (shared by the dashboard and the Orders page) ---------- */
 function statusControl(o) {
   if (o.st === "delivered" || o.st === "cancelled") return statusPill(o.st);
@@ -110,11 +153,15 @@ function bindOrderControls(root, redraw) {
     const o = allOrders().find((x) => x.id === s.dataset.status);
     const v = s.value;
     if (v === "on-the-way" && !o.rider) { s.value = o.st; return toast("Assign a rider before sending the order out", "alert"); }
-    if (v === "cancelled" && !await confirmBox({ title: `Cancel order ${o.id}?`, text: `${esc(userByEmail(o.email)?.name || o.email)} won't be charged ${peso(o.total)}. This can't be undone.`, yes: "Yes, cancel order", no: "Keep it", danger: true })) { s.value = o.st; return; }
+    if (v === "cancelled" && !await confirmBox({ title: `Cancel order ${o.id}?`, yes: "Yes, cancel order", no: "Keep it", danger: true,
+      text: `${esc(userByEmail(o.email)?.name || o.email)} ${isPaid(o) ? `will get a ${peso(o.total)} refund to ${esc(payLabel(o.payment))}` : `won't be charged ${peso(o.total)}`}. We'll email them. This can't be undone.` })) { s.value = o.st; return; }
     if (v === "delivered" && !await confirmBox({ ic: "checkCircle", title: `Mark ${o.id} as delivered?`, text: "Do this only when the rider has handed over the food.", yes: "Mark delivered" })) { s.value = o.st; return; }
-    try { await updateRow("orders", o.id, { status: v, placed_at: "" }); }   // placed_at blank = the admin controls the status now, not the demo clock
+    const changes = { status: v, placed_at: "" };   // placed_at blank = the admin controls the status now, not the demo clock
+    if (v === "cancelled" && isPaid(o)) changes.refund = "processing";
+    try { await updateRow("orders", o.id, changes); }
     catch { s.value = o.st; return toast("Couldn't save. Is server.py still running?", "alert"); }
-    toast(`${o.id} is now ${STATUSES[v]}`);
+    if (v === "cancelled") notifyCustomer(o, `Order ${o.id} cancelled`, `We're sorry, your order ${o.id} was cancelled by MoBites.\n${isPaid(o) ? refundText(o) : "It was cash on delivery, so you weren't charged."}`);
+    toast(`${o.id} is now ${STATUSES[v]}${changes.refund ? ". Refund started." : ""}`);
     redraw();
   });
   $$("[data-rider]", root).forEach((s) => s.onchange = async () => {
@@ -125,10 +172,11 @@ function bindOrderControls(root, redraw) {
     redraw();
   });
 }
-function orderModal(o) {
+function orderModal(o, after) {
   const r = restaurantById(o.restaurant_id) || { name: "Removed restaurant" };
   const c = userByEmail(o.email);
   const rider = staffById(o.rider);
+  const chat = rows("messages").filter((m) => m.order_id === o.id).sort((a, b) => a.sent_at - b.sent_at);
   modal(`
     <div style="display:flex;justify-content:space-between;align-items:center;gap:12px"><h2 style="font-size:22px">Order ${esc(o.id)}</h2><button class="icon-btn" data-close aria-label="Close">${icon("x", 18)}</button></div>
     <div style="display:flex;gap:8px;flex-wrap:wrap">${statusPill(o.st)}<span class="muted small">${fmtDate(o.date)}${o.placed_at ? " · " + fmtTime(Number(o.placed_at)) : ""}</span></div>
@@ -137,14 +185,29 @@ function orderModal(o) {
       <span>Restaurant</span><b>${esc(r.name)}</b>
       <span>Deliver to</span><b>${esc(o.address)}</b>
       <span>Rider</span><b>${rider ? `${esc(rider.name)}<br><span class="muted small">${prettyPhone(rider.phone)}${rider.plate ? " · " + esc(rider.plate) : ""}</span>` : "None yet"}</b>
-      <span>Payment</span><b>${PAYMENTS[o.payment] || esc(o.payment)}</b>
+      <span>Payment</span><b>${esc(payLabel(o.payment))}</b>
+      ${o.note ? `<span>Note</span><b class="${/allerg/i.test(o.note) ? "text-alert" : ""}">${esc(o.note)}</b>` : ""}
+      ${o.refund ? `<span>Refund</span><b>${o.refund === "refunded" ? "Refunded" : "Processing"} · ${peso(o.total)} to ${esc(payLabel(o.payment))}</b>` : ""}
     </div>
     <div class="summary">${parseItems(o.items).map(([m, q]) => { const it = itemById(m); return `<div class="line"><span>${q}× ${esc(it?.name || "Item " + m)}</span><span>${it ? peso(it.price * q) : ""}</span></div>`; }).join("")}
-      <div class="line total"><span>Total</span><span>${peso(o.total)}</span></div></div>`, "wide");
+      <div class="line total"><span>Total</span><span>${peso(o.total)}</span></div></div>
+    ${chat.length ? `<details class="mail"><summary><b>${icon("chat", 16)} Rider–customer chat (${chat.length})</b></summary><div class="chat-log small-log">${chat.map((m) => `<div class="msg ${m.sender === "rider" ? "me" : ""}"><span>${esc(m.text)}</span><small>${m.sender === "rider" ? "Rider" : "Customer"} · ${fmtTime(m.sent_at)}</small></div>`).join("")}</div></details>` : ""}
+    <div class="form-actions">
+      ${ACTIVE.includes(o.st) ? `<a class="btn btn-primary btn-sm" href="#/admin/orders/${esc(o.id)}/edit">${icon("pencil", 14)} Edit order</a>` : ""}
+      ${o.refund === "processing" ? `<button class="btn btn-primary btn-sm" id="refundDone">${icon("checkCircle", 14)} Mark refund as done</button>` : ""}
+    </div>`, "wide");
+  const rd = $("#refundDone");
+  if (rd) rd.onclick = async () => {
+    if (!await confirmBox({ ic: "wallet", title: `Refund ${peso(o.total)} done?`, text: `Only confirm once the money is back in the customer's ${esc(payLabel(o.payment))}. We'll email them.`, yes: "Yes, it's refunded" })) return;
+    try { await updateRow("orders", o.id, { refund: "refunded" }); } catch { return toast("Couldn't save. Is server.py still running?", "alert"); }
+    notifyCustomer(o, `Refund for ${o.id} completed`, `Your refund of ${peso(o.total)} for order ${o.id} is done. It's back in your ${payLabel(o.payment)}.`);
+    toast("Refund marked as done", "wallet");
+    after?.();
+  };
 }
 
 /* ---------- chrome ---------- */
-const ADMIN_TABS = [["admin", "Dashboard", "chart"], ["admin/orders", "Orders", "receipt"], ["admin/restaurants", "Restaurants", "store"], ["admin/staff", "Riders & staff", "badge"], ["admin/customers", "Customers", "users"], ["admin/categories", "Categories", "tag"]];
+const ADMIN_TABS = [["admin", "Dashboard", "chart"], ["admin/live", "Live orders", "bike"], ["admin/orders", "Orders", "receipt"], ["admin/restaurants", "Restaurants", "store"], ["admin/staff", "Riders & staff", "badge"], ["admin/customers", "Customers", "users"], ["admin/categories", "Categories", "tag"], ["admin/feedback", "Feedback", "chat"]];
 function renderAdminChrome(path) {
   const a = currentAdmin();
   const on = (p) => (p === "admin" ? path === "admin" : path === p || path.startsWith(p + "/"));
@@ -285,8 +348,8 @@ function pageAdminHome() {
 function pageAdminOrders(_, query) {
   let filter = query.get("f") || "all";
   let q = query.get("q") || "";
-  const FILTERS = [["all", "All"], ["active", "Active"], ["pending", "Pending"], ["no-rider", "No rider"], ["delivered", "Delivered"], ["cancelled", "Cancelled"]];
-  const match = (o, f) => f === "all" || (f === "active" ? ACTIVE.includes(o.st) : f === "no-rider" ? ACTIVE.includes(o.st) && !o.rider : o.st === f);
+  const FILTERS = [["all", "All"], ["active", "Active"], ["pending", "Pending"], ["no-rider", "No rider"], ["delivered", "Delivered"], ["cancelled", "Cancelled"], ["refund", "Refunds to do"]];
+  const match = (o, f) => f === "all" || (f === "active" ? ACTIVE.includes(o.st) : f === "no-rider" ? ACTIVE.includes(o.st) && !o.rider : f === "refund" ? o.refund === "processing" : o.st === f);
   return {
     html: `<div class="wrap">
       ${adminHead("Orders", "Every order, one place.", "Change a status or assign a rider right in the table.",
@@ -309,62 +372,75 @@ function pageAdminOrders(_, query) {
         $("#rows", root).innerHTML = list.length ? list.map((o) => {
           const r = restaurantById(o.restaurant_id);
           return `<tr>
-            ${td("Order", `<b>${esc(o.id)}</b><br><span class="muted small">${fmtDate(o.date)}${o.placed_at ? " · " + fmtTime(Number(o.placed_at)) : ""}</span>`)}
-            ${td("Customer", `${esc(userByEmail(o.email)?.name || o.email)}<br><span class="muted small">${PAYMENTS[o.payment] || esc(o.payment)}</span>`)}
+            ${td("Order", `<b>${esc(o.id)}</b><br><span class="muted small">${fmtDate(o.date)}${o.placed_at ? " · " + fmtTime(Number(o.placed_at)) : ""}</span>${o.note ? `<br><span class="small ${/allerg/i.test(o.note) ? "text-alert" : "muted"}" title="${esc(o.note)}">${icon(/allerg/i.test(o.note) ? "alert" : "file", 13)} ${/allerg/i.test(o.note) ? "Allergies" : "Has a note"}</span>` : ""}`)}
+            ${td("Customer", `${esc(userByEmail(o.email)?.name || o.email)}<br><span class="muted small">${esc(payLabel(o.payment))}</span>`)}
             ${td("Restaurant", `${esc(r?.name || "Removed restaurant")}<br><span class="muted small">${itemsText(o)}</span>`, "wrap-cell")}
-            ${td("Status", statusControl(o))}
+            ${td("Status", statusControl(o) + (o.refund ? `<br><span class="refund-tag is-${o.refund}">${o.refund === "refunded" ? "Refunded" : "Refund to do"}</span>` : ""))}
             ${td("Rider", riderControl(o))}
             ${td("Total", `<b>${peso(o.total)}</b>`)}
             ${td("", `<button class="btn btn-ghost btn-sm" data-view="${esc(o.id)}">View</button>`, "act")}</tr>`;
         }).join("") : emptyRow(7, "receipt", term ? `No orders match "${esc(q)}".` : "No orders here yet.");
-        $$("[data-view]", root).forEach((b) => b.onclick = () => orderModal(allOrders().find((o) => o.id === b.dataset.view)));
+        $$("[data-view]", root).forEach((b) => b.onclick = () => orderModal(allOrders().find((o) => o.id === b.dataset.view), draw));
         bindOrderControls(root, draw);
       };
       $("#q", root).addEventListener("input", (e) => { q = e.target.value; draw(); });
       bindExports(root);
       draw();
-      timers.push(setInterval(() => { if (!root.contains(document.activeElement) || document.activeElement === document.body) draw(); }, 10000)); // live orders move on their own
+      everyFew(5000, ["orders"], () => {   // new orders from customers and riders show up on their own
+        if ($("#modal").hidden && (document.activeElement === document.body || !root.contains(document.activeElement) || document.activeElement.id === "q")) draw();
+      });
     },
   };
 }
 
-function pageAdminNewOrder() {
+function pageAdminNewOrder([editId] = []) {
+  const edit = editId ? allOrders().find((o) => o.id === editId) : null;
+  if (editId && !edit) return pageNotFound();
+  if (edit && !ACTIVE.includes(edit.st)) return { html: `<div class="wrap"><div class="empty" style="padding:80px 16px">${icon("lock", 40)}<h2>${esc(edit.id)} can't be edited</h2><p style="margin:8px 0 20px">It's already ${STATUSES[edit.st].toLowerCase()}.</p><a class="btn btn-primary" href="#/admin/orders?q=${esc(edit.id)}">Back to orders</a></div></div>` };
   const users = Object.fromEntries(rows("users").map((u) => [u.email, `${u.name} (${u.email})`]));
+  if (edit && !users[edit.email]) users[edit.email] = edit.email;
   const rests = Object.fromEntries(restaurants().map((r) => [r.id, r.name]));
-  const freeRiders = Object.fromEntries(riders().filter((r) => r.status === "active").map((r) => [r.id, r.name + (busyRider(r.id) ? " (on a delivery)" : "")]));
+  const freeRiders = Object.fromEntries(riders().filter((r) => r.status === "active" || r.id === edit?.rider).map((r) => [r.id, r.name + (r.id !== edit?.rider && busyRider(r.id) ? " (on a delivery)" : "")]));
+  const pays = edit && !PAYMENTS[edit.payment] ? { ...PAYMENTS, [edit.payment]: payLabel(edit.payment) } : PAYMENTS;
+  const oldItems = edit ? Object.fromEntries(parseItems(edit.items).map(([m, q]) => [String(m), q])) : {};
+  const oldSub = Object.entries(oldItems).reduce((s, [m, q]) => s + (itemById(m)?.price || 0) * q, 0);
+  const extraFees = edit ? Number(edit.total) - oldSub - Number(restaurantById(edit.restaurant_id)?.fee || 0) - SERVICE_FEE : 0;   // the customer's tip minus any promo
   return {
     html: `<div class="wrap">
-      <div class="crumbs"><a href="#/admin/orders">Orders</a> / New order</div>
-      ${adminHead("New order", "Take an order by phone.", "For customers who call or message instead of using the app.")}
+      <div class="crumbs"><a href="#/admin/orders">Orders</a> / ${edit ? esc(edit.id) + " / Edit" : "New order"}</div>
+      ${edit ? adminHead("Edit order", `Edit ${esc(edit.id)}`, "Change items, address, payment, rider or note. The customer gets an email about the change.")
+        : adminHead("New order", "Take an order by phone.", "For customers who call or message instead of using the app.")}
       <form class="checkout" id="form" novalidate>
         <div style="display:grid;gap:20px">
           <section class="panel"><h3>1 · Customer</h3>
             <div class="form">
-              ${selectField({ id: "email", label: "Customer", options: users, blank: "Choose a customer", rules: "required" })}
+              ${selectField({ id: "email", label: "Customer", options: users, blank: "Choose a customer", rules: "required", value: edit?.email })}
               ${field({ id: "address", label: "Deliver to", ph: "Street, barangay, city", rules: "required address", hint: "Filled in from the customer's saved address. You can change it." })}
             </div>
           </section>
           <section class="panel"><h3>2 · Food</h3>
             <div class="form">
-              ${selectField({ id: "restaurant", label: "Restaurant", options: rests, blank: "Choose a restaurant", rules: "required" })}
+              ${selectField({ id: "restaurant", label: "Restaurant", options: rests, blank: "Choose a restaurant", rules: "required", value: edit?.restaurant_id })}
               <div class="field" id="itemsField"><label>Items</label><div id="items" class="pick-list"><p class="muted small">Choose a restaurant to see its menu.</p></div><span class="err" id="items-err"></span></div>
             </div>
           </section>
           <section class="panel"><h3>3 · Payment and rider</h3>
             <div class="form row-2">
-              ${selectField({ id: "payment", label: "Payment", options: PAYMENTS, value: "cod" })}
-              ${selectField({ id: "rider", label: "Rider", options: freeRiders, blank: "Assign later", hint: "Only active riders are listed." })}
+              ${selectField({ id: "payment", label: "Payment", options: pays, value: edit?.payment || "cod" })}
+              ${selectField({ id: "rider", label: "Rider", options: freeRiders, blank: "Assign later", hint: "Only active riders are listed.", value: edit?.rider })}
             </div>
+            <div class="field" style="margin-top:16px"><label for="note">Note for the restaurant and rider <span class="muted">(optional)</span></label><textarea id="note" name="note" maxlength="200" placeholder="e.g. Allergies: Peanuts · Call when outside">${esc(edit?.note || "")}</textarea></div>
           </section>
         </div>
         <aside class="panel summary-panel"><h3>Order summary</h3><div id="sum"></div>
-          <button class="btn btn-primary btn-block" style="margin-top:14px">Save order ${icon("arrowRight", 16)}</button>
+          <button class="btn btn-primary btn-block" style="margin-top:14px">${edit ? "Save changes" : `Save order ${icon("arrowRight", 16)}`}</button>
           <a class="btn btn-ghost btn-block" href="#/admin/orders" style="margin-top:10px">Cancel</a></aside>
       </form>
     </div>`,
     after(root) {
       const form = $("#form", root);
-      const qty = {};
+      const qty = { ...oldItems };
+      if (edit) { form.email.disabled = true; form.restaurant.disabled = true; form.address.value = edit.address; }
       const subtotal = () => Object.entries(qty).reduce((s, [id, n]) => s + (itemById(id)?.price || 0) * n, 0);
       const count = () => Object.values(qty).reduce((a, b) => a + b, 0);
       const drawSum = () => {
@@ -375,7 +451,9 @@ function pageAdminNewOrder() {
           <div class="line"><span>Subtotal</span><span>${peso(sub)}</span></div>
           <div class="line"><span>Delivery fee</span><span>${peso(fee)}</span></div>
           <div class="line"><span>Service fee</span><span>${peso(SERVICE_FEE)}</span></div>
-          <div class="line total"><span>Total</span><span>${peso(sub ? sub + fee + SERVICE_FEE : 0)}</span></div></div>`;
+          ${extraFees ? `<div class="line"><span>Tip and promo</span><span>${extraFees < 0 ? "−" : ""}${peso(Math.abs(extraFees))}</span></div>` : ""}
+          <div class="line total"><span>Total</span><span>${peso(sub ? sub + fee + SERVICE_FEE + extraFees : 0)}</span></div>
+          ${edit && sub ? `<p class="small muted">Was ${peso(edit.total)}.</p>` : ""}</div>`;
       };
       const checkItems = () => {
         const ok = count() > 0;
@@ -403,16 +481,31 @@ function pageAdminNewOrder() {
         const ok = validateForm(form);
         if (!checkItems() || !ok) return toast("Check the highlighted fields", "alert");
         const r = restaurantById(form.restaurant.value);
-        const total = subtotal() + Number(r.fee) + SERVICE_FEE;
-        const c = userByEmail(form.email.value);
+        const total = subtotal() + Number(r.fee) + SERVICE_FEE + extraFees;
+        const c = userByEmail(form.email.value) || { name: form.email.value, email: form.email.value };
+        const items = Object.entries(qty).filter(([, n]) => n).map(([id, n]) => `${id}x${n}`).join(";");
+        if (edit) {
+          const diff = total - Number(edit.total);
+          if (!await confirmBox({ ic: "pencil", title: `Save changes to ${esc(edit.id)}?`, yes: "Save changes", no: "Keep editing",
+            text: `New total <b>${peso(total)}</b>${diff ? ` (${diff > 0 ? "+" : "−"}${peso(Math.abs(diff))})` : ""}<br>${esc(payLabel(form.payment.value))} · ${form.rider.value ? "Rider: " + esc(staffById(form.rider.value).name) : "No rider yet"}<br>We'll email ${esc(c.name)} about the change.` })) return;
+          try { await updateRow("orders", edit.id, { items, total, address: form.address.value.trim(), payment: form.payment.value, rider: form.rider.value, note: form.note.value.trim() }); }
+          catch { return toast("Couldn't save. Is server.py still running?", "alert"); }
+          notifyCustomer(edit, `Your order ${edit.id} was updated`, `We made a change to your order ${edit.id} from ${r.name}.\nNew total: ${peso(total)}${diff ? ` (${diff > 0 ? "+" : "−"}${peso(Math.abs(diff))})` : ""}.\nDeliver to: ${form.address.value.trim()}\n\nQuestions? Reply to this email or message your rider in the app.`);
+          sess.del(draftKey(form));
+          toast(`${edit.id} updated`, "pencil");
+          location.hash = "#/admin/orders?q=" + edit.id;
+          return;
+        }
         if (!await confirmBox({ ic: "receipt", title: "Save this order?", yes: `Save order · ${peso(total)}`, no: "Not yet",
-          text: `<b>${esc(c.name)}</b> · ${count()} item${count() > 1 ? "s" : ""} from ${esc(r.name)}<br>${PAYMENTS[form.payment.value]} · ${form.rider.value ? "Rider: " + esc(staffById(form.rider.value).name) : "No rider yet"}` })) return;
+          text: `<b>${esc(c.name)}</b> · ${count()} item${count() > 1 ? "s" : ""} from ${esc(r.name)}<br>${esc(payLabel(form.payment.value))} · ${form.rider.value ? "Rider: " + esc(staffById(form.rider.value).name) : "No rider yet"}` })) return;
         const order = {
           id: "MB-" + String(Date.now()).slice(-6), email: c.email, restaurant_id: r.id,
           items: Object.entries(qty).filter(([, n]) => n).map(([id, n]) => `${id}x${n}`).join(";"), total, date: ymd(new Date()),
           placed_at: "", status: "pending", address: form.address.value.trim(), payment: form.payment.value, rider: form.rider.value,
+          note: form.note.value.trim(), refund: "", pin: makePin(),
         };
         try { await appendRow("orders", order); } catch { return toast("Couldn't save the order. Is server.py still running?", "alert"); }
+        sess.del(draftKey(form));
         toast(`Order ${order.id} saved`, "receipt");
         location.hash = "#/admin/orders?q=" + order.id;
       });
@@ -503,8 +596,8 @@ function pageAdminRestaurant([id]) {
             </div>
             <div class="row-2">
               ${field({ id: "badge", label: 'Badge <span class="muted">(optional)</span>', value: r.badge, ph: "e.g. New, Bestseller", attrs: 'maxlength="16"' })}
-              ${field({ id: "image", label: 'Photo file <span class="muted">(optional)</span>', value: r.image, ph: "e.g. r13.jpg", rules: "photo", hint: "Put the photo in assets/img/restaurants/." })}
             </div>
+            ${photoPicker("image", "Restaurant photo")}
             <div class="form-actions"><button class="btn btn-primary">${isNew ? `Add restaurant ${icon("arrowRight", 16)}` : "Save changes"}</button><a class="btn btn-ghost" href="#/admin/restaurants">Cancel</a></div>
           </form>
         </section>
@@ -520,10 +613,8 @@ function pageAdminRestaurant([id]) {
             <input type="hidden" name="dishId">
             ${field({ id: "dname", label: "Dish name", ph: "e.g. Pork Sisig", rules: "required label", attrs: 'maxlength="40"' })}
             ${field({ id: "ddesc", label: "Description", ph: "e.g. Sizzling, with egg and calamansi", rules: "required label", attrs: 'maxlength="80"' })}
-            <div class="row-2">
-              ${field({ id: "dprice", label: "Price (₱)", ph: "149", rules: "required money", attrs: 'inputmode="decimal"' })}
-              ${field({ id: "dimage", label: 'Photo <span class="muted">(optional)</span>', ph: "e.g. 37.jpg", rules: "photo" })}
-            </div>
+            ${field({ id: "dprice", label: "Price (₱)", ph: "149", rules: "required money", attrs: 'inputmode="decimal"' })}
+            ${photoPicker("dimage", "Dish photo")}
             <label class="check"><input type="checkbox" name="dpopular"> Mark as bestseller</label>
             <div class="form-actions"><button class="btn btn-primary" id="dishSave">${icon("plus", 16)} Add dish</button><button type="button" class="btn btn-ghost" id="dishCancel" hidden>Cancel edit</button></div>
           </form>
@@ -541,6 +632,8 @@ function pageAdminRestaurant([id]) {
         $("#preview", root).innerHTML = restaurantCard({ ...v, name: v.name || "Restaurant name", tags: v.tags || "Short description", id: v.id || "preview" }, null);
         $("#preview a", root)?.addEventListener("click", (e) => e.preventDefault());
       };
+      const newId = isNew ? nextId(restaurants(), "r", 2) : r.id;
+      bindPhotoPicker(root, form, "image", "restaurants", () => newId, r.image, () => preview());
       const extra = { name: (el) => !restaurants().some((x) => x.id !== r.id && x.name.toLowerCase() === el.value.trim().toLowerCase()) || "Another restaurant already has this name." };
       liveValidate(form, extra);
       form.addEventListener("input", preview);
@@ -562,7 +655,7 @@ function pageAdminRestaurant([id]) {
         const v = values();
         try {
           if (isNew) {
-            v.id = nextId(restaurants(), "r", 2);
+            v.id = newId;
             await appendRow("restaurants", v);
             toast(`${v.name} added. Now add its menu.`, "store");
             location.hash = "#/admin/restaurants/" + v.id;
@@ -580,8 +673,9 @@ function pageAdminRestaurant([id]) {
 
       $("#del", root).onclick = () => removeRestaurant(r.id, () => (location.hash = "#/admin/restaurants"));
       const dform = $("#dishForm", root);
+      const dishPhoto = bindPhotoPicker(root, dform, "dimage", "menu", () => "dish-" + (dform.dishId.value || nextId(menuItems(), "", 0)), "");
       const resetDish = () => {
-        dform.reset(); dform.dishId.value = ""; delete dform.dataset.touched;
+        dform.reset(); dform.dishId.value = ""; dishPhoto.set(""); delete dform.dataset.touched;
         $$(".field", dform).forEach((f) => f.classList.remove("has-error", "is-valid"));
         $("#dishTitle", root).textContent = "Add a dish";
         $("#dishSave", root).innerHTML = icon("plus", 16) + " Add dish";
@@ -603,7 +697,7 @@ function pageAdminRestaurant([id]) {
           const m = itemById(b.dataset.edit);
           resetDish();
           dform.dishId.value = m.id; dform.dname.value = m.name; dform.ddesc.value = m.description;
-          dform.dprice.value = m.price; dform.dimage.value = m.image; dform.dpopular.checked = m.popular === "yes";
+          dform.dprice.value = m.price; dishPhoto.set(m.image); dform.dpopular.checked = m.popular === "yes";
           $("#dishTitle", root).textContent = "Edit " + m.name;
           $("#dishSave", root).textContent = "Save dish";
           $("#dishCancel", root).hidden = false;
@@ -758,12 +852,22 @@ function pageAdminHire() {
         const rider = role() === "rider";
         const s = { id: nextId(staff(), "S", 2), name: form.name.value.trim(), role: role(), phone: normalizePhone(form.phone.value), email: form.email.value.trim().toLowerCase(),
           area: form.area.value, vehicle: rider ? form.vehicle.value : "", plate: rider && form.vehicle.value !== "bicycle" ? form.plate.value.trim().toUpperCase().replace(/\s+/, " ") : "",
-          status: "active", hired: form.hired.value };
+          status: "active", hired: form.hired.value, password_sha256: "" };
+        const temp = rider ? "Rider#" + makePin() : "";
         if (!await confirmBox({ ic: "badge", title: `Hire ${esc(s.name)}?`, yes: "Yes, hire", no: "Not yet",
           text: `${STAFF_ROLES[s.role]} · ${esc(s.area)}${rider ? ` · ${VEHICLES[s.vehicle]}${s.plate ? " " + esc(s.plate) : ""}` : ""}<br>Starts ${fmtDate(s.hired)}` })) return;
+        if (temp) s.password_sha256 = await sha256(temp);
         try { await appendRow("staff", s); } catch { return toast("Couldn't save. Is server.py still running?", "alert"); }
-        toast(`Welcome to the team, ${firstName(s.name)}!`, "badge");
-        location.hash = "#/admin/staff?f=" + (rider ? "rider" : "office");
+        sess.del(draftKey(form));
+        const done = () => (location.hash = "#/admin/staff?f=" + (rider ? "rider" : "office"));
+        if (!temp) { toast(`Welcome to the team, ${firstName(s.name)}!`, "badge"); return done(); }
+        const real = await sendMail({ to: s.email, name: s.name, subject: "Welcome to MoBites! Your rider login",
+          message: `Hi ${firstName(s.name)},\n\nWelcome to the MoBites rider team! Log in to the rider app at ${location.origin + location.pathname}#/rider\n\nEmail: ${s.email}\nTemporary password: ${temp}\n\nIngat sa daan!\nMoBites Operations` });
+        modal(`<div class="ring">${icon("badge", 28)}</div><h2 style="font-size:24px">${esc(firstName(s.name))} is hired!</h2>
+          <p class="muted">${real ? "We emailed their rider login." : "Their rider login went to the demo inbox."} Give them this temporary password too:</p>
+          <div class="code-pill big">${esc(temp)}</div>
+          <p class="small muted">They log in at <b>#/rider</b> with ${esc(s.email)}.</p>
+          <div class="actions"><button class="btn btn-primary" data-close>Done</button></div>`, "", done);
       });
       sync();
     },
@@ -865,11 +969,110 @@ function pageAdminCategories() {
   };
 }
 
+/* ---------- live order monitor ---------- */
+function beep() {
+  try {
+    const a = new (window.AudioContext || window.webkitAudioContext)();
+    const o = a.createOscillator(), g = a.createGain();
+    o.frequency.value = 880; g.gain.value = 0.08; o.connect(g); g.connect(a.destination); o.start(); o.stop(a.currentTime + 0.2);
+  } catch { /* no sound available */ }
+}
+function pageAdminLive() {
+  let known = null;
+  const fresh = new Map();   // order id -> time it first showed up
+  return {
+    html: `<div class="wrap">
+      ${adminHead("Live orders", "Order monitor", "Updates every few seconds. New orders flash yellow, and late ones turn red.",
+        `<label class="check" style="align-items:center"><input type="checkbox" id="sound" ${store.get("admin_sound", true) ? "checked" : ""}> ${icon("sparkle", 16)} Sound for new orders</label>`)}
+      <div class="live-bar" id="liveBar"></div>
+      <div class="kanban" id="board"></div>
+    </div>`,
+    after(root) {
+      $("#sound", root).onchange = (e) => store.set("admin_sound", e.target.checked);
+      const COLS = [["pending", "New"], ["preparing", "Preparing"], ["on-the-way", "On the way"], ["delivered", "Delivered today"]];
+      const draw = () => {
+        const today = ymd(new Date());
+        const list = allOrders().filter((o) => ACTIVE.includes(o.st) || (o.st === "delivered" && o.date === today));
+        const ids = new Set(list.filter((o) => o.st === "pending").map((o) => o.id));
+        if (known) {
+          const added = [...ids].filter((x) => !known.has(x));
+          added.forEach((x) => fresh.set(x, Date.now()));
+          if (added.length) { toast(`New order${added.length > 1 ? "s" : ""}: ${added.join(", ")}`, "receipt"); if ($("#sound", root).checked) beep(); }
+        }
+        known = new Set([...(known || []), ...ids]);
+        const mins = (o) => (o.placed_at ? Math.floor((Date.now() - o.placed_at) / 60000) : null);
+        const late = (o) => ACTIVE.includes(o.st) && mins(o) !== null && mins(o) >= 40;
+        const noRider = list.filter((o) => ACTIVE.includes(o.st) && !o.rider).length;
+        $("#liveBar", root).innerHTML = `<span>${icon("receipt", 16)} <b>${list.filter((o) => ACTIVE.includes(o.st)).length}</b> active</span>
+          <span class="${noRider ? "text-alert" : ""}">${icon("bike", 16)} <b>${noRider}</b> without a rider</span>
+          <span class="${list.some(late) ? "text-alert" : ""}">${icon("clock", 16)} <b>${list.filter(late).length}</b> late (40+ min)</span>
+          <span class="muted small">Last update ${fmtTime(Date.now())}</span>`;
+        $("#board", root).innerHTML = COLS.map(([k, label]) => {
+          const col = list.filter((o) => o.st === k);
+          return `<section class="k-col k-${k}"><h3>${statusPill(k).replace(STATUSES[k], label)} <span class="count">${col.length}</span></h3>
+            ${col.map((o) => {
+              const r = restaurantById(o.restaurant_id), rider = staffById(o.rider), m = mins(o);
+              return `<button type="button" class="k-card ${late(o) ? "is-late" : ""} ${fresh.has(o.id) && Date.now() - fresh.get(o.id) < 15000 ? "is-new" : ""}" data-view="${esc(o.id)}">
+                <span class="k-top"><b>${esc(o.id)}</b><span class="small muted">${m !== null ? (m < 1 ? "just now" : m + " min") : fmtDate(o.date)}</span></span>
+                <span class="small">${esc(r?.name || "Removed restaurant")} → ${esc(userByEmail(o.email)?.name || o.email)}</span>
+                <span class="small ${o.rider || k === "delivered" ? "muted" : "text-alert"}">${icon("bike", 13)} ${rider ? esc(rider.name) : "No rider yet"}</span>
+                <span class="k-foot"><b>${peso(o.total)}</b><span class="small muted">${esc(payLabel(o.payment))}</span>${o.note ? `<span class="small ${/allerg/i.test(o.note) ? "text-alert" : "muted"}" title="${esc(o.note)}">${icon(/allerg/i.test(o.note) ? "alert" : "file", 13)}</span>` : ""}${rows("messages").some((x) => x.order_id === o.id) ? `<span class="small muted" title="Has chat messages">${icon("chat", 13)}</span>` : ""}</span>
+              </button>`;
+            }).join("") || `<p class="small muted k-empty">None</p>`}</section>`;
+        }).join("");
+        $$("[data-view]", root).forEach((b) => b.onclick = () => orderModal(allOrders().find((o) => o.id === b.dataset.view), draw));
+      };
+      draw();
+      everyFew(4000, ["orders", "messages", "staff"], () => { if ($("#modal").hidden) draw(); });
+    },
+  };
+}
+
+/* ---------- feedback inbox ---------- */
+function pageAdminFeedback() {
+  let filter = "all";
+  return {
+    html: `<div class="wrap">
+      ${adminHead("Feedback", "What customers are saying", "From the Feedback page. Mark each one as read once the team has seen it.")}
+      <div class="stats" id="fbStats" style="margin-bottom:20px"></div>
+      <section class="panel"><div class="filters" id="filters"></div><div id="list"></div><div style="margin-top:16px">${dbNote("feedback")}</div></section>
+    </div>`,
+    after(root) {
+      const draw = () => {
+        const all = rows("feedback").sort((a, b) => String(b.date).localeCompare(String(a.date)) || String(b.id).localeCompare(String(a.id)));
+        const avg = all.length ? all.reduce((s, f) => s + Number(f.rating), 0) / all.length : 0;
+        $("#fbStats", root).innerHTML = statCard("star", "Average rating", avg ? avg.toFixed(1) + " / 5" : "-", `${all.length} messages`) + statCard("mail", "Unread", all.filter((f) => f.status === "new").length)
+          + statCard("checkCircle", "4–5 stars", all.filter((f) => f.rating >= 4).length) + statCard("alert", "1–2 stars", all.filter((f) => f.rating <= 2).length, "Follow these up");
+        const F = [["all", "All"], ["new", "Unread"], ...Object.entries(FEEDBACK_TOPICS)];
+        $("#filters", root).innerHTML = F.map(([k, l]) => `<button class="chip ${k === filter ? "is-active" : ""}" data-f="${k}">${l}</button>`).join("");
+        $$("[data-f]", root).forEach((b) => b.onclick = () => { filter = b.dataset.f; draw(); });
+        const list = all.filter((f) => filter === "all" || (filter === "new" ? f.status === "new" : f.topic === filter));
+        $("#list", root).innerHTML = list.length ? list.map((f) => `<article class="fb-item ${f.status === "new" ? "is-new" : ""}">
+            <div class="fb-top"><span class="fb-stars" aria-label="${f.rating} out of 5 stars">${[1, 2, 3, 4, 5].map((n) => `<span class="${n <= f.rating ? "on" : ""}">${icon("star", 16)}</span>`).join("")}</span>
+              <span class="badge">${esc(FEEDBACK_TOPICS[f.topic] || f.topic)}</span>${f.status === "new" ? `<span class="status status--pending">New</span>` : ""}<span class="small muted" style="margin-left:auto">${fmtDate(f.date)}</span></div>
+            <p>${esc(f.message)}</p>
+            <div class="fb-foot small muted">${esc(userByEmail(f.email)?.name || f.email)}${f.order_id ? ` · <a href="#/admin/orders?q=${esc(f.order_id)}">${esc(f.order_id)}</a>` : ""}
+              ${f.status === "new" ? `<button class="btn btn-ghost btn-sm" data-read="${esc(f.id)}">${icon("check", 14)} Mark as read</button>` : ""}</div></article>`).join("")
+          : `<div class="empty">${icon("chat", 34)}<p>No feedback here.</p></div>`;
+        $$("[data-read]", root).forEach((b) => b.onclick = async () => {
+          try { await updateRow("feedback", b.dataset.read, { status: "read" }); } catch { return toast("Couldn't save. Is server.py still running?", "alert"); }
+          toast("Marked as read", "check"); draw();
+        });
+      };
+      bindExports(root);
+      draw();
+    },
+  };
+}
+
 ROUTES.push(
   { re: /^admin\/login$/, page: pageAdminLogin, adminGuest: true, title: "Admin log in" },
   { re: /^admin$/, page: pageAdminHome, admin: true, title: "Admin dashboard" },
   { re: /^admin\/orders$/, page: pageAdminOrders, admin: true, title: "Admin · Orders" },
-  { re: /^admin\/orders\/new$/, page: pageAdminNewOrder, admin: true, title: "Admin · New order" },
+  { re: /^admin\/orders\/new$/, page: () => pageAdminNewOrder(), admin: true, title: "Admin · New order" },
+  { re: /^admin\/orders\/(MB-[\w-]+)\/edit$/, page: pageAdminNewOrder, admin: true, title: "Admin · Edit order" },
+  { re: /^admin\/live$/, page: pageAdminLive, admin: true, title: "Admin · Live orders" },
+  { re: /^admin\/feedback$/, page: pageAdminFeedback, admin: true, title: "Admin · Feedback" },
   { re: /^admin\/restaurants$/, page: pageAdminRestaurants, admin: true, title: "Admin · Restaurants" },
   { re: /^admin\/restaurants\/([\w-]+)$/, page: pageAdminRestaurant, admin: true, title: "Admin · Restaurant" },
   { re: /^admin\/staff$/, page: pageAdminStaff, admin: true, title: "Admin · Riders & staff" },

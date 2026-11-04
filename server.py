@@ -1,20 +1,26 @@
 """MoBites local server: serves the website AND writes to the Notepad (.txt) database.
 
 Run:   python server.py        then open http://127.0.0.1:5173
+       python server.py 8000   to use another port
 Stop:  Ctrl + C
 
 Without this server (e.g. on GitHub Pages) the site still READS the .txt files,
 but new sign-ups/orders are kept in the browser instead of being written to disk.
 """
+import base64
 import json
 import os
+import re
+import sys
 import threading
 from http.server import SimpleHTTPRequestHandler, ThreadingHTTPServer
 
 ROOT = os.path.dirname(os.path.abspath(__file__))
 DATA = os.path.join(ROOT, "data")
-PORT = 5173
-WRITABLE = {"orders", "users", "restaurants", "menu", "categories", "staff"}  # tables the website may write to
+PORT = int(sys.argv[1]) if len(sys.argv) > 1 else 5173
+WRITABLE = {"orders", "users", "restaurants", "menu", "categories", "staff", "messages", "feedback"}  # tables the website may write to
+PHOTO_FOLDERS = {"restaurants", "menu", "team"}  # admin photo uploads go to assets/img/<folder>/
+MAX_PHOTO = 3_000_000                             # bytes (the page shrinks photos before uploading)
 LOCK = threading.Lock()         # one write at a time (a .txt file has no locking of its own)
 
 
@@ -102,6 +108,27 @@ def delete_row(name, row_id):
         return True
 
 
+def save_photo(folder, name, data_url):
+    """Save an uploaded photo (sent as a data: URL) into assets/img/<folder>/ and return its file name."""
+    if folder not in PHOTO_FOLDERS:
+        raise ValueError("unknown photo folder")
+    m = re.match(r"^data:image/(jpeg|png|webp);base64,(.+)$", data_url, re.S)
+    if not m:
+        raise ValueError("photo must be a jpg, png or webp")
+    ext = {"jpeg": "jpg", "png": "png", "webp": "webp"}[m.group(1)]
+    stem = re.sub(r"[^a-z0-9-]+", "-", name.lower()).strip("-")[:40] or "photo"
+    file = f"{stem}.{ext}"
+    raw = base64.b64decode(m.group(2))
+    if len(raw) > MAX_PHOTO:
+        raise ValueError("photo too large")
+    path = os.path.join(ROOT, "assets", "img", folder)
+    os.makedirs(path, exist_ok=True)
+    with LOCK:
+        with open(os.path.join(path, file), "wb") as f:
+            f.write(raw)
+    return file
+
+
 class Handler(SimpleHTTPRequestHandler):
     def __init__(self, *a, **kw):
         super().__init__(*a, directory=ROOT, **kw)
@@ -129,7 +156,7 @@ class Handler(SimpleHTTPRequestHandler):
     def do_POST(self):
         try:
             length = int(self.headers.get("Content-Length", 0))
-            if length > 20000:
+            if length > (MAX_PHOTO * 4 // 3 + 1000 if self.path == "/api/upload" else 20000):
                 return self.send_json(413, {"error": "too large"})
             body = json.loads(self.rfile.read(length) or b"{}")
             if self.path == "/api/append":
@@ -141,8 +168,10 @@ class Handler(SimpleHTTPRequestHandler):
             if self.path == "/api/delete":
                 ok = delete_row(body["table"], str(body["id"]))
                 return self.send_json(200 if ok else 404, {"ok": ok})
+            if self.path == "/api/upload":
+                return self.send_json(200, {"ok": True, "file": save_photo(body["folder"], body["name"], body["data"])})
             return self.send_json(404, {"error": "unknown endpoint"})
-        except (ValueError, KeyError, StopIteration) as e:
+        except (ValueError, KeyError, StopIteration, base64.binascii.Error) as e:
             return self.send_json(400, {"error": str(e)})
 
 

@@ -37,16 +37,32 @@ const store = {
   set(k, v) { try { localStorage.setItem("mb_" + k, JSON.stringify(v)); } catch { /* ignore */ } },
   del(k) { try { localStorage.removeItem("mb_" + k); } catch { /* ignore */ } },
 };
+const sess = {   // this tab only, but survives a refresh
+  get(k, d) { try { const v = sessionStorage.getItem("mb_" + k); return v ? JSON.parse(v) : d; } catch { return d; } },
+  set(k, v) { try { sessionStorage.setItem("mb_" + k, JSON.stringify(v)); } catch { /* ignore */ } },
+  del(k) { try { sessionStorage.removeItem("mb_" + k); } catch { /* ignore */ } },
+};
 const memory = {};
 
 function currentUser() {
-  const email = store.get("session", memory.session);
+  const email = store.get("session") || sess.get("session") || memory.session;
   if (!email) return null;
-  const u = rows("users").find((x) => x.email.toLowerCase() === email.toLowerCase());
-  return u ? { ...u, ...store.get("profile_" + u.email, {}) } : null;
+  return rows("users").find((x) => x.email.toLowerCase() === email.toLowerCase()) || null;
 }
-function setSession(email, remember) { memory.session = email; if (remember !== false) store.set("session", email); else store.del("session"); }
-function logout() { memory.session = null; store.del("session"); store.del("cart"); }
+function setSession(email, remember) {
+  memory.session = email;
+  if (remember !== false) { store.set("session", email); sess.del("session"); } else { store.del("session"); sess.set("session", email); }
+}
+function logout() { memory.session = null; store.del("session"); sess.del("session"); store.del("cart"); }
+
+/** Stops password guessing: 5 wrong tries lock that login for 60 seconds. */
+const loginGuard = {
+  state(k) { return store.get("guard_" + k, { n: 0, until: 0 }); },
+  locked(k) { const s = this.state(k); return s.until > Date.now() ? Math.ceil((s.until - Date.now()) / 1000) : 0; },
+  fail(k) { const s = this.state(k); s.n += 1; if (s.n >= 5) { s.until = Date.now() + 60000; s.n = 0; } store.set("guard_" + k, s); return s.until > Date.now() ? 0 : 5 - s.n; },
+  ok(k) { store.del("guard_" + k); },
+  message(left) { return left ? `Wrong email or password. ${left} ${left === 1 ? "try" : "tries"} left before a 60-second lock.` : "Too many wrong tries. Log in is locked for 60 seconds."; },
+};
 
 function getCart() { return store.get("cart", memory.cart || { r: null, items: {} }); }
 function setCart(c) { memory.cart = c; store.set("cart", c); }
@@ -76,17 +92,27 @@ function distanceKm(a, b) {
 // Placed orders move through the status system on a short demo clock.
 const STATUSES = { pending: "Pending", preparing: "Preparing", "on-the-way": "On the way", delivered: "Delivered", cancelled: "Cancelled" };
 const STAGES = ["pending", "preparing", "on-the-way", "delivered"];
+const STAGE_AT = [0, 20, 90, 140];   // demo clock: seconds after placing. A rider who accepts takes over the status.
 function orderStatus(o) {
   if (o.status === "cancelled" || !o.placed_at) return o.status;
   const s = (Date.now() - o.placed_at) / 1000;
-  return s < 20 ? "pending" : s < 50 ? "preparing" : s < 100 ? "on-the-way" : "delivered";
+  return s < STAGE_AT[1] ? "pending" : s < STAGE_AT[2] ? "preparing" : s < STAGE_AT[3] ? "on-the-way" : "delivered";
 }
+const isPaid = (o) => o.payment && o.payment !== "cod";
+function payLabel(p) {
+  p = String(p || "");
+  if (p.startsWith("card")) return "Card" + (p.split("-")[1] ? " ••" + p.split("-")[1] : "");
+  return { cod: "Cash on delivery", gcash: "GCash", maya: "Maya" }[p] || p;
+}
+const makePin = () => String(1000 + (crypto.getRandomValues(new Uint32Array(1))[0] % 9000));
 const statusPill = (st) => `<span class="status status--${st}">${STATUSES[st] || esc(st)}</span>`;
 
 /* ---------- images: real photo if the .txt names one, else a placeholder ---------- */
 const ph = (ic, tone, text = "Add photo") => `<div class="ph" data-tone="${tone}">${icon(ic, 48)}<span>${text}</span></div>`;
 function pic(file, folder, alt, ic, tone) {
-  return file ? `<img src="assets/img/${folder}/${esc(file)}" alt="${esc(alt)}" loading="lazy" data-icon="${ic}" data-tone="${tone}" onerror="phSwap(this)">` : ph(ic, tone);
+  if (!file) return ph(ic, tone);
+  const src = /^data:image\//.test(file) ? file : `assets/img/${folder}/${esc(file)}`;
+  return `<img src="${src}" alt="${esc(alt)}" loading="lazy" data-icon="${ic}" data-tone="${tone}" onerror="phSwap(this)">`;
 }
 window.phSwap = (el) => { el.outerHTML = ph(el.dataset.icon, el.dataset.tone); };
 const restaurantPic = (r) => pic(r.image, "restaurants", r.name, categoryById(r.category).icon, toneOf(r));
@@ -101,11 +127,63 @@ function toast(msg, ic = "checkCircle") {
   clearTimeout(toastTimer);
   toastTimer = setTimeout(() => t.classList.remove("show"), 2800);
 }
+/* Remember which button opened the pop-up, so a refresh can press it again and bring the pop-up back. */
+let lastTrigger = null, pendingRender = false;
+function noteTrigger(e) {
+  const t = e.target.closest?.("button, a, select, [data-loc]");
+  if (!t || t.closest("#modal") || !t.closest("#app, #topbar")) return;
+  const data = [...t.attributes].find((a) => a.name.startsWith("data-") && a.value && a.name !== "data-close");
+  const sel = t.id ? "#" + CSS.escape(t.id) : data ? `[${data.name}="${CSS.escape(data.value)}"]` : null;
+  lastTrigger = sel ? { sel, value: t.tagName === "SELECT" ? t.value : null, at: Date.now() } : null;
+}
+document.addEventListener("click", noteTrigger, true);
+document.addEventListener("change", noteTrigger, true);
+function replayTrigger(t) {
+  const el = $(t.sel);
+  if (!el) return sess.del("openModal");
+  if (el.tagName === "SELECT") { el.value = t.value; el.dispatchEvent(new Event("change", { bubbles: true })); } else el.click();
+}
+
+/* Half-filled forms survive a refresh too (never passwords or card details). */
+const draftKey = (form) => `draft:${currentPath()}:${form.id}`;
+const skipDraft = (el) => !el.name || ["password", "hidden", "file", "submit", "button"].includes(el.type) || /^cc-/.test(el.autocomplete) || "nodraft" in el.dataset;
+function saveDraft(form) {
+  const data = {};
+  [...form.elements].forEach((el) => {
+    if (skipDraft(el)) return;
+    if (el.type === "radio") { if (el.checked) data[el.name] = el.value; }
+    else if (el.type === "checkbox") data[el.name + "@" + el.value] = el.checked;
+    else data[el.name] = el.value;
+  });
+  sess.set(draftKey(form), data);
+}
+function restoreDrafts(root) {
+  $$("form[id]", root).forEach((form) => {
+    const d = sess.get(draftKey(form));
+    if (!d) return;
+    const els = [...form.elements].filter((el) => !skipDraft(el));
+    const put = (el) => {
+      if (el.type === "radio") el.checked = d[el.name] === el.value;
+      else if (el.type === "checkbox") { if (el.name + "@" + el.value in d) el.checked = d[el.name + "@" + el.value]; }
+      else if (el.name in d) el.value = d[el.name];
+    };
+    els.forEach(put);
+    els.filter((el) => el.tagName === "SELECT" || el.type === "radio" || el.type === "checkbox").forEach((el) => el.dispatchEvent(new Event("change", { bubbles: true })));
+    els.filter((el) => el.tagName !== "SELECT" && el.type !== "radio" && el.type !== "checkbox").forEach((el) => { put(el); el.dispatchEvent(new Event("input", { bubbles: true })); });
+  });
+}
+["input", "change"].forEach((ev) => document.addEventListener(ev, (e) => { const f = e.target.form; if (f?.id && f.closest("#app")) saveDraft(f); }));
+document.addEventListener("reset", (e) => { if (e.target.id) sess.del(draftKey(e.target)); }, true);
+
 function modal(html, cls = "", onClose) {
   const m = $("#modal");
   m.innerHTML = `<div class="dialog ${cls}" role="dialog" aria-modal="true">${html}</div>`;
   m.hidden = false;
-  const close = () => { m.hidden = true; m.innerHTML = ""; document.removeEventListener("keydown", onKey); onClose?.(); };
+  if (lastTrigger && Date.now() - lastTrigger.at < 3000) sess.set("openModal", { hash: location.hash, sel: lastTrigger.sel, value: lastTrigger.value });
+  const close = () => {
+    m.hidden = true; m.innerHTML = ""; document.removeEventListener("keydown", onKey); sess.del("openModal"); onClose?.();
+    if (pendingRender) { pendingRender = false; setTimeout(render); }
+  };
   const onKey = (e) => { if (e.key === "Escape") close(); };
   document.addEventListener("keydown", onKey);
   m.onclick = (e) => { if (e.target === m || e.target.closest("[data-close]")) close(); };
@@ -282,7 +360,7 @@ const normalizePhone = (v) => { let d = v.replace(/\D/g, ""); if (d.startsWith("
 const RULES = {
   required: (v) => v.trim() !== "" || "This field is required.",
   email: (v) => /^[^\s@]+@[^\s@]+\.[^\s@]{2,}$/.test(v.trim()) || "Enter a valid email, like juan@email.com.",
-  name: (v) => v.trim().length >= 2 || "Enter your full name.",
+  name: (v) => (v.trim().length >= 2 && /^[A-Za-zÀ-ÖØ-öø-ÿ][A-Za-zÀ-ÖØ-öø-ÿ .'()-]*$/.test(v.trim())) || (/\d/.test(v) ? "Names can't have numbers. Use letters only." : v.trim().length < 2 ? "Enter your full name." : "Use letters only (spaces, dots and dashes are OK)."),
   password: (v) => (v.length >= 8 && /\d/.test(v) && /[^A-Za-z0-9]/.test(v)) || "Use 8+ characters with a number and a symbol.",
   phone: (v) => /^09\d{9}$/.test(normalizePhone(v)) || "Enter an 11-digit PH mobile number, like 0917 123 4567.",
   card: (v) => luhn(v) || "That card number doesn't look right.",
@@ -354,12 +432,21 @@ function bindPasswordToggles(root) {
     i.type = i.type === "password" ? "text" : "password";
     b.setAttribute("aria-label", i.type === "password" ? "Show password" : "Hide password");
   }));
+  $$(".pw-wrap input", root).forEach((i) => {   // warn about Caps Lock, a common cause of "wrong password"
+    const hint = document.createElement("span");
+    hint.className = "hint caps"; hint.hidden = true; hint.innerHTML = icon("alert", 14) + " Caps Lock is on";
+    i.closest(".field").insertBefore(hint, i.closest(".field").querySelector(".err"));
+    const check = (e) => { if (e.getModifierState) hint.hidden = !e.getModifierState("CapsLock"); };
+    i.addEventListener("keyup", check); i.addEventListener("keydown", check);
+  });
 }
 
 /* ---------- chrome: top bar, bottom bar, footer ---------- */
 function renderChrome(path, u) {
-  document.body.classList.toggle("is-admin", path === "admin" || path.startsWith("admin/"));
-  if (document.body.classList.contains("is-admin")) return renderAdminChrome(path);
+  const staffArea = path.split("/")[0];
+  document.body.classList.toggle("is-admin", staffArea === "admin" || staffArea === "rider");
+  if (staffArea === "admin") return renderAdminChrome(path);
+  if (staffArea === "rider") return renderRiderChrome(path);
   const active = (p) => (path === p || path.startsWith(p + "/") ? "is-active" : "");
   const count = cartCount();
   const loc = getLoc();
@@ -409,7 +496,7 @@ function renderChrome(path, u) {
   $$("[data-loc]").forEach((b) => b.onclick = () => openMapPicker());
   $("#footer").innerHTML = `<div class="wrap">
     <span><strong>MoBites</strong> · Your bites, on the move. Made in the Philippines.</span>
-    <nav aria-label="Footer"><a href="#/about">About us</a><a href="#/how">Help</a><a href="#/privacy">Privacy Policy</a><a href="#/terms">Terms of Service</a><a href="#/admin">Admin</a></nav>
+    <nav aria-label="Footer"><a href="#/about">About us</a><a href="#/how">Help</a><a href="#/privacy">Privacy Policy</a><a href="#/terms">Terms of Service</a><a href="#/feedback">Feedback</a><a href="#/rider">Riders</a><a href="#/admin">Admin</a></nav>
     <span>© 2026 MoBites</span></div>`;
 }
 
@@ -665,7 +752,7 @@ function pageAuth(_, query, mode) {
           ${field({ id: "password", label: "Password", type: "password", ph: "Your password", rules: "required", password: true, attrs: 'autocomplete="current-password"' })}
           <div style="display:flex;justify-content:space-between;align-items:center;gap:12px;flex-wrap:wrap">
             <label class="check"><input type="checkbox" name="remember" checked> Keep me logged in</label>
-            <a href="#/login${nq}" class="small" id="forgot">Forgot password?</a>
+            <a href="#/forgot" class="small">Forgot password?</a>
           </div>
           <button class="btn btn-primary btn-block">Log in ${icon("arrowRight", 16)}</button>
           <p class="small muted" style="text-align:center">New here? <a href="#/signup${nq}">Create an account</a></p>
@@ -678,8 +765,10 @@ function pageAuth(_, query, mode) {
           ${field({ id: "password", label: "Password", type: "password", ph: "Create a password", rules: "required password", password: true, hint: "At least 8 characters, with a number and a symbol.", attrs: 'autocomplete="new-password"' })}
           <div class="strength" aria-hidden="true"><i id="meter"></i></div>
           ${field({ id: "confirm", label: "Confirm password", type: "password", ph: "Type it again", rules: "required", password: true, attrs: 'autocomplete="new-password"' })}
+          ${allergyPicker("allergy", [])}
           <div class="check field"><input type="checkbox" id="terms" name="terms" data-rules="checked"><label for="terms" style="font-weight:600">I agree to the <a href="#/terms" target="_blank">Terms of Service</a> and <a href="#/privacy" target="_blank">Privacy Policy</a>.</label><span class="err" style="flex-basis:100%"></span></div>
-          <button class="btn btn-primary btn-block">Create account ${icon("arrowRight", 16)}</button>
+          <button class="btn btn-primary btn-block" id="signupBtn">Create account ${icon("arrowRight", 16)}</button>
+          <p class="small muted" style="text-align:center">We'll email you a 6-digit code to confirm it's really you.</p>
           <p class="small muted" style="text-align:center">Welcome gift: use <b>${PROMO.code}</b> for ${peso(PROMO.off)} off your first ${peso(PROMO.min)} order.</p>
         </form>`}
       </div>
@@ -690,17 +779,19 @@ function pageAuth(_, query, mode) {
       const form = $("#form", root);
       const alertBox = $("#alert", root);
       const showAlert = (msg) => { alertBox.querySelector("span").textContent = msg; alertBox.classList.add("show"); };
-      const finish = (name) => { toast(`${login ? "Welcome back" : "Welcome"}, ${firstName(name)}! You're now in Member view.`); location.hash = "#/" + next; };
+      const finish = (name) => { toast(`Welcome back, ${firstName(name)}! You're now in Member view.`); location.hash = "#/" + next; };
       if (login) {
-        $("#forgot", root).onclick = (e) => { e.preventDefault(); toast("If that email has an account, we sent a reset link.", "checkCircle"); };
         liveValidate(form);
         form.addEventListener("submit", async (e) => {
           e.preventDefault();
           alertBox.classList.remove("show");
           if (!validateForm(form)) return;
+          const key = "user:" + form.email.value.trim().toLowerCase();
+          const wait = loginGuard.locked(key);
+          if (wait) return showAlert(`Too many wrong tries. Try again in ${wait} seconds.`);
           const u = rows("users").find((x) => x.email.toLowerCase() === form.email.value.trim().toLowerCase());
-          if (!u) return showAlert("We couldn't find an account with that email. Check it, or sign up.");
-          if (u.password_sha256 !== await sha256(form.password.value)) { showAlert("Wrong password. Try again."); form.password.focus(); return; }
+          if (!u || u.password_sha256 !== await sha256(form.password.value)) { showAlert(loginGuard.message(loginGuard.fail(key))); form.password.value = ""; form.password.focus(); return; }
+          loginGuard.ok(key);
           setSession(u.email, form.remember.checked);
           finish(u.name);
         });
@@ -721,11 +812,13 @@ function pageAuth(_, query, mode) {
         form.addEventListener("submit", async (e) => {
           e.preventDefault();
           if (!validateForm(form, extra)) return;
-          const row = { name: form.name.value.trim(), email: form.email.value.trim().toLowerCase(), password_sha256: await sha256(form.password.value),
-            phone: normalizePhone(form.phone.value), address: getLoc()?.label || "", points: 0, since: String(new Date().getFullYear()) };
-          try { await appendRow("users", row); } catch { return showAlert("We couldn't save your account. Is server.py still running?"); }
-          setSession(row.email);
-          finish(row.name);
+          const row = { email: form.email.value.trim().toLowerCase(), name: form.name.value.trim(), password_sha256: await sha256(form.password.value),
+            phone: normalizePhone(form.phone.value), alt_phones: "", address: getLoc()?.label || "", allergies: $$("input[name=allergy]:checked", form).map((x) => x.value).join(";"),
+            points: 0, since: String(new Date().getFullYear()) };
+          $("#signupBtn", root).disabled = true;
+          await startEmailCheck("signup", row.email, row.name, { row, next });   // the account is only saved after the code is confirmed
+          sess.del(draftKey(form));
+          location.hash = "#/verify/signup";
         });
       }
     },
@@ -740,7 +833,9 @@ function pageCheckout() {
     return { html: `<div class="wrap"><div class="empty" style="padding:80px 16px">${icon("bag", 44)}<h2>Your bag is empty</h2><p style="margin:8px 0 20px">Find something masarap and it'll show up here.</p><a class="btn btn-primary" href="#/explore">Browse restaurants</a></div></div>` };
   }
   let tip = 20, promo = null;
-  const phone = u.phone ? String(u.phone).replace(/^(\d{4})(\d{3})(\d{4})$/, "$1 $2 $3") : "";
+  const fmtPhone = (p) => String(p || "").replace(/^(\d{4})(\d{3})(\d{4})$/, "$1 $2 $3");
+  const phones = [u.phone, ...String(u.alt_phones || "").split(";")].filter(Boolean);
+  const allergies = String(u.allergies || "").split(";").filter(Boolean);
   return {
     html: `<div class="wrap">
       <div class="page-head" style="display:flex;justify-content:space-between;gap:16px;flex-wrap:wrap;align-items:end">
@@ -753,26 +848,15 @@ function pageCheckout() {
           <section class="panel"><h3>${icon("pin", 20)} Deliver to</h3>
             <div id="addrBox"></div>
             <div class="form" style="margin-top:16px">
-              ${phoneField("phone", "Mobile number for the rider", phone)}
+              <div class="field"><label for="phone">Number the rider can call</label>
+                <select id="phone" name="phone">${phones.map((p, i) => `<option value="${p}">${fmtPhone(p)}${i ? "" : " (main)"}</option>`).join("")}</select>
+                <span class="hint">Need another number? <a href="#/profile">Add it in your account</a>.</span></div>
               <div class="field"><label for="notes">Note for the rider <span class="muted">(optional)</span></label><textarea id="notes" name="notes" placeholder="e.g. Pakiiwan po sa guard" maxlength="140"></textarea></div>
+              ${allergies.length ? `<label class="check allergy-note"><input type="checkbox" name="tellAllergy" value="yes" checked> <span>Tell the restaurant and rider about my food allergies: <b>${esc(allergies.join(", "))}</b></span></label>` : `<p class="small muted">Food allergies? <a href="#/profile">Add them to your account</a> and we'll pass them on.</p>`}
             </div>
           </section>
-          <section class="panel"><h3>${icon("wallet", 20)} How will you pay?</h3>
-            <div class="radio-cards" style="margin-bottom:16px">
-              <label><input type="radio" name="pay" value="cod" checked> ${icon("cash", 18)} Cash on delivery</label>
-              <label><input type="radio" name="pay" value="gcash"> ${icon("wallet", 18)} GCash</label>
-              <label><input type="radio" name="pay" value="card"> ${icon("card", 18)} Card</label>
-            </div>
-            <div class="form" id="gcashFields" hidden>${phoneField("gcash", "GCash number")}</div>
-            <div class="form" id="cardFields" hidden>
-              ${field({ id: "cardName", label: "Name on card", value: u.name, rules: "required name", attrs: 'autocomplete="cc-name"' })}
-              ${field({ id: "cardNum", label: "Card number", ph: "4242 4242 4242 4242", rules: "required card", hint: "Demo only. Use the test number 4242 4242 4242 4242.", attrs: 'inputmode="numeric" autocomplete="cc-number" maxlength="19"' })}
-              <div class="row-2">
-                ${field({ id: "exp", label: "Expiry", ph: "MM/YY", rules: "required expiry", attrs: 'inputmode="numeric" autocomplete="cc-exp" maxlength="5"' })}
-                ${field({ id: "cvc", label: "CVC", ph: "123", rules: "required cvc", attrs: 'inputmode="numeric" autocomplete="cc-csc" maxlength="4"' })}
-              </div>
-            </div>
-            <p class="small muted" id="codNote">Please prepare the exact amount for the rider.</p>
+          <section class="panel"><div class="section-head" style="margin-bottom:8px"><h3 style="margin:0">${icon("wallet", 20)} Payment method</h3><a class="link-arrow small" href="#/payments">Manage ${icon("arrowRight", 14)}</a></div>
+            <div id="payBox"></div>
           </section>
           <section class="panel"><h3>${icon("heart", 20)} Tip your rider</h3>
             <div class="chips" id="tips">${[0, 20, 30, 50].map((t) => `<button type="button" class="chip ${t === tip ? "is-active" : ""}" data-tip="${t}">${t ? peso(t) : "No tip"}</button>`).join("")}</div>
@@ -833,15 +917,28 @@ function pageCheckout() {
         drawSummary(); renderChrome(currentPath(), u);
       };
       $$("[data-tip]", root).forEach((b) => b.onclick = () => { tip = +b.dataset.tip; $$("[data-tip]", root).forEach((x) => x.classList.toggle("is-active", x === b)); drawSummary(); });
-      const syncPay = () => {
-        $("#cardFields", root).hidden = form.pay.value !== "card";
-        $("#gcashFields", root).hidden = form.pay.value !== "gcash";
-        $("#codNote", root).hidden = form.pay.value !== "cod";
+      let cashFor = 0;
+      const drawPay = (pick) => {
+        const methods = payMethods(u);
+        const cur = pick || form.pay?.value || defaultPayMethod(u);
+        const sel = methods.some((m) => m.key === cur) ? cur : "cod";
+        $("#payBox", root).innerHTML = `<div class="pay-list" role="radiogroup" aria-label="Payment method">${methods.map((m) => `
+            <label class="pay-opt"><input type="radio" name="pay" value="${m.key}" ${m.key === sel ? "checked" : ""}><span class="pay-ic">${icon(m.ic, 20)}</span><span class="grow"><b>${esc(m.label)}</b><br><span class="small muted">${esc(m.sub)}</span></span>${icon("checkCircle", 20, "pay-check")}</label>`).join("")}
+          </div>
+          <button type="button" class="btn btn-ghost btn-sm" id="addPay" style="margin-top:12px">${icon("plus", 16)} Add a card or e-wallet</button>
+          <div id="payExtra" style="margin-top:12px"></div>`;
+        const extra = () => {
+          const v = form.pay.value;
+          $("#payExtra", root).innerHTML = v === "cod"
+            ? `<p class="small" style="font-weight:800;margin-bottom:6px">Need change? Tell your rider what you'll pay with.</p><div class="chips" style="padding:0">${[0, 500, 1000].map((c) => `<button type="button" class="chip ${c === cashFor ? "is-active" : ""}" data-cash="${c}" style="min-height:36px">${c ? peso(c) + " bill" : "Exact amount"}</button>`).join("")}</div>`
+            : v.startsWith("card") ? `<p class="small muted">${icon("lock", 14)} We'll charge your saved card. No need to type your card details again.</p>`
+            : `<p class="small muted">${icon("phone", 14)} After you place your order, approve the payment in ${payLabel(v)}.</p>`;
+          $$("[data-cash]", root).forEach((b) => b.onclick = () => { cashFor = +b.dataset.cash; extra(); });
+        };
+        $$("input[name=pay]", root).forEach((x) => x.onchange = extra);
+        $("#addPay", root).onclick = () => openAddPayment(u, (key) => drawPay(key));
+        extra();
       };
-      $$("input[name=pay]", form).forEach((x) => x.onchange = syncPay);
-      maskPhone(form.phone); maskPhone(form.gcash);
-      form.cardNum.addEventListener("input", (e) => { e.target.value = e.target.value.replace(/\D/g, "").slice(0, 16).replace(/(\d{4})(?=\d)/g, "$1 "); });
-      form.exp.addEventListener("input", (e) => { const d = e.target.value.replace(/\D/g, "").slice(0, 4); e.target.value = d.length > 2 ? d.slice(0, 2) + "/" + d.slice(2) : d; });
       $("#applyPromo", root).onclick = () => {
         const f = $("#promo", root).closest(".field");
         const code = $("#promo", root).value.trim().toUpperCase();
@@ -862,26 +959,31 @@ function pageCheckout() {
         if (!loc) { toast("Pin your delivery address first", "pin"); $("[data-pick]", root).focus(); return; }
         if (!validateForm(form)) { toast("Check the highlighted fields", "alert"); return; }
         const t = totals();
-        const payLabel = { cod: "Cash on delivery", gcash: "GCash", card: "Card" }[form.pay.value];
+        const pay = form.pay.value;
         if (!await confirmBox({ ic: "bag", title: "Place your order?", yes: `Yes, place order · ${peso(t.total)}`, no: "Not yet",
-          text: `<b>${esc(r.name)}</b> · ${cartCount()} item${cartCount() > 1 ? "s" : ""}<br>${payLabel} · ${peso(t.total)}<br>Deliver to ${esc(loc.label)}` })) return;
+          text: `<b>${esc(r.name)}</b> · ${cartCount()} item${cartCount() > 1 ? "s" : ""}<br>${esc(payLabel(pay))} · ${peso(t.total)}<br>Deliver to ${esc(loc.label)}` })) return;
+        if (pay === "gcash" || pay === "maya") { if (!await walletApprove(pay, t.total, u)) return toast("Payment cancelled, so your order wasn't placed.", "alert"); }
+        else if (pay.startsWith("card")) await processingBox("Charging your card…", `${payLabel(pay)} · ${peso(t.total)}`);
         const cart = getCart();
+        const note = [form.notes.value.trim(), form.phone.value !== u.phone ? "Call " + fmtPhone(form.phone.value) : "",
+          pay === "cod" && cashFor ? `Change for ${peso(cashFor)}` : "", form.tellAllergy?.checked ? "Allergies: " + allergies.join(", ") : ""].filter(Boolean).join(" · ");
         const order = {
           id: "MB-" + String(Date.now()).slice(-6), email: u.email, restaurant_id: r.id,
           items: Object.entries(cart.items).map(([mid, q]) => `${mid}x${q}`).join(";"), total: t.total, date: ymd(new Date()),
-          placed_at: Date.now(), status: "pending", address: [loc.detail, loc.label].filter(Boolean).join(", "), payment: form.pay.value,
+          placed_at: Date.now(), status: "pending", address: [loc.detail, loc.label].filter(Boolean).join(", "), payment: pay,
+          rider: "", note, refund: "", pin: makePin(),
         };
         $("#placeBtn", root).disabled = true;
         try { await appendRow("orders", order); }
         catch { $("#placeBtn", root).disabled = false; toast("Couldn't save your order. Is server.py still running?", "alert"); return; }
         const pts = Math.floor(t.total / PESOS_PER_POINT);
         store.set("earned_" + u.email, store.get("earned_" + u.email, 0) + pts);
-        store.set("profile_" + u.email, { ...store.get("profile_" + u.email, {}), phone: normalizePhone(form.phone.value) });
+        sess.del(draftKey(form));
         setCart({ r: null, items: {} });
         toast(`Order placed! +${pts} points`, "checkCircle");
         location.hash = "#/orders/" + order.id;
       });
-      syncPay(); drawAddr(); drawSummary();
+      drawPay(); drawAddr(); drawSummary();
     },
   };
 }
@@ -894,14 +996,23 @@ function trackingBits(o) {
   const timeline = `<ol class="timeline">${steps.map(([t, d], i) => {
     const done = i < idx || st === "delivered";
     return `<li class="${done ? "done" : i === idx ? "current" : ""}"><span class="dot">${done ? icon("check", 14) : i === idx ? icon("clock", 14) : ""}</span>
-      <div><b>${t}</b><small>${d}${o.placed_at && i <= idx ? " · " + fmtTime(o.placed_at + [0, 20, 50, 100][i] * 1000) : ""}</small></div></li>`;
+      <div><b>${t}</b><small>${d}${o.placed_at && i <= idx ? " · " + fmtTime(o.placed_at + STAGE_AT[i] * 1000) : ""}</small></div></li>`;
   }).join("")}</ol>`;
   return { st, idx, pct, timeline };
 }
 
-function riderLine(o) {
-  const s = rows("staff").find((x) => x.id === o.rider);
-  return s ? `<div class="addr-card" style="margin-bottom:14px"><span class="avatar" style="width:40px;height:40px;font-size:14px">${initials(s.name)}</span><span class="grow"><b>${esc(s.name)}</b><br><span class="small muted">Your rider · ${esc(s.vehicle || "rider")}${s.plate ? " · " + esc(s.plate) : ""}</span></span></div>` : "";
+function riderCard(s, o) {
+  return `<div class="addr-card rider-card"><span class="avatar" style="width:44px;height:44px;font-size:15px">${initials(s.name)}</span><span class="grow"><b>${esc(s.name)}</b><br><span class="small muted">Your rider · ${esc(VEHICLE_LABELS[s.vehicle] || "Rider")}${s.plate ? " · " + esc(s.plate) : ""}</span></span>
+    ${["delivered", "cancelled"].includes(orderStatus(o)) ? "" : `<a class="icon-btn" href="tel:${esc(s.phone)}" aria-label="Call ${esc(s.name)}" title="Call">${icon("phone", 18)}</a>`}</div>`;
+}
+const VEHICLE_LABELS = { motorcycle: "Motorcycle", bicycle: "Bicycle", car: "Car" };
+
+function refundBox(o) {
+  if (orderStatus(o) !== "cancelled") return "";
+  if (!isPaid(o)) return `<div class="refund-box">${icon("cash", 20)}<div><b>No payment was taken</b><br><span class="small muted">This was cash on delivery, so there's nothing to refund.</span></div></div>`;
+  const done = o.refund === "refunded";
+  return `<div class="refund-box ${done ? "is-done" : ""}">${icon(done ? "checkCircle" : "clock", 20)}<div><b>${done ? "Refunded" : "Refund in progress"}: ${peso(o.total)} to ${esc(payLabel(o.payment))}</b><br>
+    <span class="small muted">${done ? "The money is back in your account." : "We've sent the refund. It usually shows up in 3 to 5 banking days."}</span></div></div>`;
 }
 
 function pageOrderDetail([id]) {
@@ -916,42 +1027,64 @@ function pageOrderDetail([id]) {
       <div class="track">
         <div style="display:grid;gap:20px">
           <section class="track-hero" id="hero"></section>
+          <div id="refund"></div>
           <section class="panel"><h3>${esc(r.name)}</h3>
             ${parseItems(o.items).map(([mid, q]) => { const m = itemById(mid); return m ? `<div class="bag-item"><div class="thumb">${dishPic(m)}</div><div><b>${esc(m.name)}</b><br><span class="muted small">Qty ${q}</span></div><b>${peso(m.price * q)}</b></div>` : ""; }).join("")}
-            <div class="summary"><div class="line total"><span>Total (${{ cod: "Cash on delivery", gcash: "GCash", card: "Card" }[o.payment] || esc(o.payment)})</span><span>${peso(o.total)}</span></div></div>
+            ${o.note ? `<p class="small" style="margin-top:12px">${icon("file", 14)} ${esc(o.note)}</p>` : ""}
+            <div class="summary"><div class="line total"><span>Total (${esc(payLabel(o.payment))})</span><span>${peso(o.total)}</span></div></div>
           </section>
         </div>
-        <section class="panel"><h3>Live status</h3>${riderLine(o)}<div id="timeline"></div><div id="actions" style="display:grid;gap:10px;margin-top:8px"></div></section>
+        <div style="display:grid;gap:20px;align-content:start">
+          <section class="panel"><h3>Live status</h3><div id="riderBox"></div><div id="timeline"></div><div id="actions" style="display:grid;gap:10px;margin-top:8px"></div></section>
+          <section class="panel" id="chatBox" hidden></section>
+        </div>
       </div>
     </div>`,
     after(root) {
+      let last = null, chat = null;
       const draw = () => {
         const fresh = userOrders(u).find((x) => x.id === id);
         const t = trackingBits(fresh);
         if (t.st !== fresh.status) updateRow("orders", id, { status: t.st }).catch(() => {}); // keep orders.txt in sync
+        const rider = rows("staff").find((x) => x.id === fresh.rider);
+        const live = !["delivered", "cancelled"].includes(t.st);
         $("#headline", root).textContent = { pending: "Got your order!", preparing: "Niluluto na!", "on-the-way": "Malapit na! Your rider is on the way.", delivered: "Delivered. Kain na!", cancelled: "This order was cancelled." }[t.st];
         $("#hero", root).innerHTML = `
           <div style="display:flex;justify-content:space-between;gap:12px;align-items:center"><span class="eyebrow">${t.st === "delivered" ? "Delivered" : t.st === "cancelled" ? "Cancelled" : "Arriving"}</span>${statusPill(t.st)}</div>
-          <div class="eta">${t.st === "cancelled" ? "No charge" : fresh.placed_at ? (t.st === "delivered" ? fmtTime(fresh.placed_at + 100000) : fmtTime(fresh.placed_at + 25 * 60000) + " – " + fmtTime(fresh.placed_at + 35 * 60000)) : fmtDate(fresh.date)}</div>
+          <div class="eta">${t.st === "cancelled" ? (isPaid(fresh) ? "Refund" : "No charge") : fresh.placed_at ? (t.st === "delivered" ? fmtTime(fresh.placed_at + STAGE_AT[3] * 1000) : fmtTime(fresh.placed_at + 25 * 60000) + " – " + fmtTime(fresh.placed_at + 35 * 60000)) : fmtDate(fresh.date)}</div>
           <div class="progress" role="progressbar" aria-valuemin="0" aria-valuemax="100" aria-valuenow="${t.pct}" aria-label="Delivery progress"><i style="width:${t.pct}%"></i></div>
-          <span class="small" style="color:#e3d4ee">${t.st === "cancelled" ? "You haven't been charged." : `${t.pct}% of the way · ${esc(fresh.address)}`}</span>`;
+          <span class="small" style="color:#e3d4ee">${t.st === "cancelled" ? (isPaid(fresh) ? "Your money is being returned." : "You haven't been charged.") : `${t.pct}% of the way · ${esc(fresh.address)}`}</span>
+          ${live && fresh.pin ? `<div class="pin-box"><span>Delivery PIN</span><b>${esc(fresh.pin)}</b><small>Give this to your rider when your food arrives. Don't share it before then.</small></div>` : ""}`;
+        $("#refund", root).innerHTML = refundBox(fresh);
+        $("#riderBox", root).innerHTML = rider ? riderCard(rider, fresh)
+          : live && ["pending", "preparing"].includes(t.st) ? `<div class="addr-card searching"><span class="pin">${icon("bike", 20)}</span><span class="grow"><b>Looking for a rider near you…</b><br><span class="small muted">We'll show their name here once someone accepts.</span></span></div>` : "";
         $("#timeline", root).innerHTML = t.timeline;
         $("#actions", root).innerHTML = (t.st === "pending" ? `<button class="btn btn-danger" id="cancel">${icon("x", 16)} Cancel order</button><span class="small muted">You can cancel while the order is Pending.</span>` : "") +
+          (t.st === "delivered" ? `<a class="btn btn-ghost" href="#/feedback?order=${esc(id)}">${icon("star", 16)} Rate this order</a>` : "") +
           (t.st === "delivered" || t.st === "cancelled" ? `<button class="btn btn-primary" id="reorder">${icon("repeat", 16)} Order again</button>` : "");
         const cb = $("#cancel", root);
-        if (cb) cb.onclick = () => {
-          const close = modal(`<div class="ring">${icon("alert", 28)}</div><h2 style="font-size:24px">Cancel this order?</h2><p class="muted">${esc(r.name)} hasn't started cooking yet, so you won't be charged.</p>
-            <div class="actions"><button class="btn btn-danger" id="yes">Yes, cancel it</button><button class="btn btn-ghost" data-close>Keep my order</button></div>`);
-          $("#yes").onclick = async () => { await updateRow("orders", id, { status: "cancelled" }); close(); toast("Order cancelled", "x"); draw(); };
+        if (cb) cb.onclick = async () => {
+          if (!await confirmBox({ title: "Cancel this order?", yes: "Yes, cancel it", no: "Keep my order", danger: true,
+            text: `${esc(r.name)} hasn't started cooking yet.${isPaid(fresh) ? ` We'll refund ${peso(fresh.total)} to your ${esc(payLabel(fresh.payment))}.` : " You won't be charged."}` })) return;
+          try { await updateRow("orders", id, { status: "cancelled", placed_at: "", refund: isPaid(fresh) ? "processing" : "" }); }
+          catch { return toast("Couldn't cancel. Is server.py still running?", "alert"); }
+          sendMail({ to: u.email, name: u.name, subject: `Order ${id} cancelled`,
+            message: `Hi ${firstName(u.name)},\n\nYour order ${id} from ${r.name} was cancelled.\n${isPaid(fresh) ? `We're refunding ${peso(fresh.total)} to your ${payLabel(fresh.payment)}. It usually shows up in 3 to 5 banking days.` : "It was cash on delivery, so you weren't charged."}\n\nMoBites` });
+          toast(isPaid(fresh) ? "Order cancelled. Refund on the way." : "Order cancelled", "x"); draw();
         };
         const rb = $("#reorder", root);
         if (rb) rb.onclick = () => reorder(fresh);
-        return t.st;
+        const hasChat = rows("messages").some((m) => m.order_id === id);
+        if ((rider && live) || hasChat) {
+          $("#chatBox", root).hidden = false;
+          if (!chat) chat = mountChat($("#chatBox", root), id, "customer", rider ? `Chat with ${firstName(rider.name)}` : "Messages");
+          chat.setOpen(live && !!rider);
+        }
+        if (last && last !== t.st && t.st === "delivered") toast("Delivered! Kain na!", "checkCircle");
+        last = t.st;
       };
-      const st = draw();
-      if (st !== "delivered" && st !== "cancelled") {
-        timers.push(setInterval(() => { const s = draw(); if (s === "delivered") toast("Delivered! Kain na!", "checkCircle"); }, 2000));
-      }
+      draw();
+      everyFew(3000, ["orders", "staff"], draw);
     },
   };
 }
@@ -1108,69 +1241,6 @@ function pageRewards() {
   };
 }
 
-function pageProfile() {
-  const u = currentUser();
-  const loc = getLoc();
-  const saved = store.get("notif_" + u.email, {});
-  return {
-    html: `<div class="wrap">
-      <div class="page-head"><span class="eyebrow">My account</span><h1 style="margin-top:6px">Hi, ${esc(firstName(u.name))}!</h1></div>
-      <div class="profile">
-        <aside class="panel profile-side">
-          <span class="avatar lg">${initials(u.name)}</span>
-          <div><h3 style="margin:0">${esc(u.name)}</h3><p class="muted small">Member since ${esc(u.since)}</p></div>
-          <span class="badge">${userPoints(u).toLocaleString()} points</span>
-          <a class="link-arrow" href="#/rewards">Rewards ${icon("arrowRight", 14)}</a>
-          <a class="link-arrow" href="#/orders">Order history ${icon("arrowRight", 14)}</a>
-          <a class="link-arrow" href="#/privacy">Privacy Policy ${icon("arrowRight", 14)}</a>
-          <a class="link-arrow" href="#/terms">Terms of Service ${icon("arrowRight", 14)}</a>
-          <button class="btn btn-danger btn-block" id="logout" style="margin-top:8px">${icon("logout", 16)} Log out</button>
-        </aside>
-        <div style="display:grid;gap:20px">
-          <section class="panel"><h3>Personal info</h3>
-            <form class="form" id="form" novalidate>
-              <div class="row-2">
-                ${field({ id: "name", label: "Full name", value: u.name, rules: "required name" })}
-                ${field({ id: "email", label: "Email address", type: "email", value: u.email, attrs: "disabled", hint: "Your email is your login and can't be changed." })}
-              </div>
-              ${phoneField("phone", "Mobile number", String(u.phone || "").replace(/^(\d{4})(\d{3})(\d{4})$/, "$1 $2 $3"))}
-              <div><button class="btn btn-primary">Save changes</button></div>
-            </form>
-          </section>
-          <section class="panel"><h3>Delivery address</h3>
-            <div class="addr-card"><span class="pin">${icon("pin", 20)}</span><span class="grow"><b>${esc(loc?.label || "No location pinned yet")}</b>${loc?.detail ? `<br><span class="small muted">${esc(loc.detail)}</span>` : ""}</span><button class="btn btn-ghost btn-sm" data-loc>${loc ? "Change" : "Set location"}</button></div>
-          </section>
-          <section class="panel"><h3>Notifications</h3>
-            ${[["n1", "Order updates", "Rider status and delivery messages", true], ["n2", "Promos & rewards", "Deals, points and member perks", true], ["n3", "New restaurants", "When a new spot opens near you", false]].map(([id, t, d, on]) =>
-              `<label class="toggle" for="${id}"><span><b>${t}</b><br><span class="muted small">${d}</span></span><input type="checkbox" id="${id}" ${(id in saved ? saved[id] : on) ? "checked" : ""}></label>`).join("")}
-          </section>
-        </div>
-      </div>
-    </div>`,
-    after(root) {
-      const form = $("#form", root);
-      maskPhone(form.phone);
-      liveValidate(form);
-      $$("[data-loc]", root).forEach((b) => b.onclick = () => openMapPicker());
-      form.addEventListener("submit", (e) => {
-        e.preventDefault();
-        if (!validateForm(form)) return;
-        store.set("profile_" + u.email, { ...store.get("profile_" + u.email, {}), name: form.name.value.trim(), phone: normalizePhone(form.phone.value) });
-        toast("Profile saved");
-        render();
-      });
-      $$(".toggle input", root).forEach((t) => t.onchange = () => {
-        store.set("notif_" + u.email, { ...store.get("notif_" + u.email, {}), [t.id]: t.checked });
-        toast(`${t.closest(".toggle").querySelector("b").textContent} ${t.checked ? "on" : "off"}`);
-      });
-      $("#logout", root).onclick = async () => {
-        if (!await confirmBox({ ic: "logout", title: "Log out of MoBites?", text: cartCount() ? "Your bag will be emptied." : "You can log back in anytime.", yes: "Log out", danger: true })) return;
-        logout(); toast("You've logged out. You're now in Guest view.", "logout"); location.hash = "#/";
-      };
-    },
-  };
-}
-
 function pagePrivacy() {
   return { html: `<div class="wrap legal">
     <span class="eyebrow">${icon("shield", 16)} Privacy Policy</span>
@@ -1268,24 +1338,34 @@ const ROUTES = [
   { re: /^orders\/([\w-]+)$/, page: pageOrderDetail, member: "Log in to track your order" },
   { re: /^favorites$/, page: pageFavorites, member: "Log in to see your favorites" },
   { re: /^rewards$/, page: pageRewards, member: "Log in to see your rewards" },
-  { re: /^profile$/, page: pageProfile, member: "Log in to see your account" },
 ];
 let timers = [];
+let renderGen = 0;   // goes up on every render, so a slow refresh from the previous page doesn't draw over this one
+/** Re-read some .txt tables every few seconds and redraw the page, until the user leaves it. */
+function everyFew(ms, tables, draw) {
+  const gen = renderGen;
+  timers.push(setInterval(async () => { await refreshTables(tables); if (gen === renderGen) draw(); }, ms));
+}
 let lastPath = null;
 
 function currentPath() { return location.hash.replace(/^#\/?/, "").split("?")[0]; }
 
 function render() {
-  timers.forEach(clearInterval); timers = [];
-  const m = $("#modal"); m.hidden = true; m.innerHTML = "";
+  timers.forEach(clearInterval); timers = []; renderGen += 1;
   const raw = location.hash.replace(/^#\/?/, "");
   const [path, qs] = [raw.split("?")[0], new URLSearchParams(raw.split("?")[1] || "")];
+  if (lastPath !== null && path !== lastPath) {   // a new page: close pop-ups and forget the old page's half-filled forms
+    const m = $("#modal"); m.hidden = true; m.innerHTML = ""; sess.del("openModal");
+    try { Object.keys(sessionStorage).filter((k) => k.startsWith(`mb_draft:${lastPath}:`)).forEach((k) => sessionStorage.removeItem(k)); } catch { /* ignore */ }
+  }
   const u = currentUser();
   const route = ROUTES.find((r) => r.re.test(path));
   if (route?.member && !u) { location.replace("#/login?next=" + encodeURIComponent(path)); toast(route.member, "lock"); return; }
   if (route?.guestOnly && u) { location.replace("#/explore"); return; }
   if (route?.admin && !currentAdmin()) { location.replace("#/admin/login?next=" + encodeURIComponent(path)); toast("Log in as admin first", "lock"); return; }
   if (route?.adminGuest && currentAdmin()) { location.replace("#/admin"); return; }
+  if (route?.rider && !currentRider()) { location.replace("#/rider/login?next=" + encodeURIComponent(path)); toast("Log in as a rider first", "lock"); return; }
+  if (route?.riderGuest && currentRider()) { location.replace("#/rider"); return; }
   if (path === "" && u) { location.replace("#/explore"); return; }
 
   renderChrome(path, u);
@@ -1293,6 +1373,7 @@ function render() {
   const app = $("#app");
   app.innerHTML = view.html;
   view.after?.(app);
+  restoreDrafts(app);
   const titles = { "": "Food delivery", explore: "Restaurants", r: "Menu", login: "Log in", signup: "Sign up", cart: "Checkout", orders: "Orders", favorites: "Favorites", rewards: "Rewards", profile: "My account", privacy: "Privacy Policy", terms: "Terms of Service", about: "About us", how: "How it works" };
   document.title = `MoBites · ${route?.title || titles[path.split("/")[0]] || "Food delivery"}`;
   if (route?.scroll) requestAnimationFrame(() => document.getElementById(path)?.scrollIntoView({ behavior: "smooth" }));
@@ -1310,7 +1391,12 @@ function render() {
       <p class="small" style="margin-top:10px">${esc(e.message)}</p></div></div>`;
     return;
   }
-  window.addEventListener("hashchange", render);
-  window.addEventListener("storage", render);
+  window.addEventListener("hashchange", async () => { await refreshTables(TABLES); render(); });   // every page shows the latest .txt data
+  window.addEventListener("storage", (e) => {   // logged in/out or changed the bag in another tab
+    if (!/^mb_(session|admin|rider|cart)$/.test(e.key || "")) return;
+    if ($("#modal").hidden) render(); else pendingRender = true;   // never yank away an open pop-up
+  });
+  const reopen = sess.get("openModal");
   render();
+  if (reopen && reopen.hash === location.hash) setTimeout(() => replayTrigger(reopen), 60);
 })();

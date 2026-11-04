@@ -1,0 +1,15 @@
+# FEEDBACK TABLE (sent from the Feedback page)
+# Edit this file in Notepad. One record per line. Columns are separated by | (do not use | inside a value).
+# Lines starting with # are notes and are ignored. Save as UTF-8 (File > Save As > Encoding: UTF-8).
+# rating = 1 to 5. topic = app, delivery, food, rider or other. order_id is optional. status = new or read.
+id|email|rating|topic|order_id|message|date|status
+F001|pedro.dinorobo@email.com|5|delivery|MB-24051|Super bilis ng delivery, mainit pa yung pagkain!|2026-10-24|read
+F002|andrea.reyes@email.com|4|app||Ang dali gamitin ng map pin. Sana may dark mode.|2026-10-25|read
+F003|miguel.bautista@email.com|3|food||Medyo matagal ang preparing pero masarap.|2026-10-26|read
+F004|kristine.garcia@email.com|5|rider||Very polite si kuya rider, salamat!|2026-10-27|read
+F005|paolo.mendoza@email.com|2|delivery||Late ng 20 minutes ang order ko.|2026-10-28|read
+F006|camille.flores@email.com|4|app||Gusto ko yung order tracking, very clear.|2026-10-29|read
+F007|rafael.villanueva@email.com|5|food||Best sisig in town!|2026-10-30|new
+F008|bea.castillo@email.com|4|other||Sana may more promo codes.|2026-10-31|new
+F009|guest@email.com|3|app||Hindi ko agad nakita yung sign up button sa phone.|2026-11-01|new
+F010|jasmine.torres@email.com|5|rider||Sobrang bait ng rider, may extra pa na ketchup.|2026-11-02|new
