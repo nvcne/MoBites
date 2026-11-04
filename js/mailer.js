@@ -185,7 +185,7 @@ function pageForgot() {
         e.preventDefault();
         if (!validateForm(form)) return;
         const u = rows("users").find((x) => x.email.toLowerCase() === form.email.value.trim().toLowerCase());
-        if (!u) { $("#alert span", root).textContent = "We couldn't find an account with that email. Check it, or sign up."; $("#alert", root).classList.add("show"); return; }
+        if (!u || !u.password_sha256) { $("#alert span", root).textContent = "We couldn't find an account with that email. Check it, or sign up."; $("#alert", root).classList.add("show"); return; }
         $("#go", root).disabled = true;
         await startEmailCheck("reset", u.email, u.name);
         location.hash = "#/verify/reset";

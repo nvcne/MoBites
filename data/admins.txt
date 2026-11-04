@@ -4,4 +4,3 @@
 # password_sha256 = SHA-256 hash of the password. The demo admin password is in README.md.
 name|email|password_sha256|role
 Admin|admin@mobites.ph|b5af2beb9b7fd5aa4eb21b61925bd3856793e54e0a39052fbcfaf5b477fd07f3|Owner
-Ops Manager|ops@mobites.ph|b5af2beb9b7fd5aa4eb21b61925bd3856793e54e0a39052fbcfaf5b477fd07f3|Operations

@@ -3,17 +3,17 @@
 # Lines starting with # are notes and are ignored. Save as UTF-8 (File > Save As > Encoding: UTF-8).
 # role = rider, dispatcher, support or operations. vehicle = motorcycle, bicycle or car (riders only, else blank).
 # status = active, off-duty, on-leave or inactive (let go). hired = YYYY-MM-DD.
-# password_sha256 = SHA-256 hash of their password. Sample staff all use the demo rider password in README.md.
+# password_sha256 = SHA-256 hash of their password. Only the demo rider (README.md) can log in; blank = no login. New hires get a temporary password.
 id|name|role|phone|email|area|vehicle|plate|status|hired|password_sha256
 S01|Juan Dela Cruz|rider|09171230001|juan.delacruz@mobites.ph|Quezon City|motorcycle|NAB 1234|active|2025-03-12|ce6426affd076feddd34e9fd21f3e549ed4df9277545790f99f7c437a035ac09
-S02|Mark Anthony Santos|rider|09181230002|mark.santos@mobites.ph|Makati|motorcycle|DCE 5678|active|2025-04-02|ce6426affd076feddd34e9fd21f3e549ed4df9277545790f99f7c437a035ac09
-S03|Jerome Navarro|rider|09191230003|jerome.navarro@mobites.ph|Taguig|motorcycle|KLM 2468|active|2025-05-20|ce6426affd076feddd34e9fd21f3e549ed4df9277545790f99f7c437a035ac09
-S04|Ronald Aquino|rider|09201230004|ronald.aquino@mobites.ph|Manila|bicycle||active|2025-06-15|ce6426affd076feddd34e9fd21f3e549ed4df9277545790f99f7c437a035ac09
-S05|Dennis Pascual|rider|09211230005|dennis.pascual@mobites.ph|Pasig|motorcycle|PQR 1357|off-duty|2025-07-01|ce6426affd076feddd34e9fd21f3e549ed4df9277545790f99f7c437a035ac09
-S06|Arnel Domingo|rider|09221230006|arnel.domingo@mobites.ph|Mandaluyong|motorcycle|STU 9753|active|2025-08-18|ce6426affd076feddd34e9fd21f3e549ed4df9277545790f99f7c437a035ac09
-S07|Rico Salazar|rider|09231230007|rico.salazar@mobites.ph|Parañaque|car|XYZ 8642|on-leave|2025-09-09|ce6426affd076feddd34e9fd21f3e549ed4df9277545790f99f7c437a035ac09
-S08|Noel Gonzales|rider|09241230008|noel.gonzales@mobites.ph|Marikina|motorcycle|GHJ 3141|active|2026-01-14|ce6426affd076feddd34e9fd21f3e549ed4df9277545790f99f7c437a035ac09
-S09|Liza Mercado|dispatcher|09251230009|liza.mercado@mobites.ph|Quezon City|||active|2025-02-10|ce6426affd076feddd34e9fd21f3e549ed4df9277545790f99f7c437a035ac09
-S10|Grace Ocampo|support|09261230010|grace.ocampo@mobites.ph|Makati|||active|2025-02-24|ce6426affd076feddd34e9fd21f3e549ed4df9277545790f99f7c437a035ac09
-S11|Joy Valdez|support|09271230011|joy.valdez@mobites.ph|Manila|||off-duty|2025-10-05|ce6426affd076feddd34e9fd21f3e549ed4df9277545790f99f7c437a035ac09
-S12|Ramon Cruz|operations|09281230012|ramon.cruz@mobites.ph|Taguig|||active|2025-01-06|ce6426affd076feddd34e9fd21f3e549ed4df9277545790f99f7c437a035ac09
+S02|Mark Anthony Santos|rider|09181230002|mark.santos@mobites.ph|Makati|motorcycle|DCE 5678|active|2025-04-02|
+S03|Jerome Navarro|rider|09191230003|jerome.navarro@mobites.ph|Taguig|motorcycle|KLM 2468|active|2025-05-20|
+S04|Ronald Aquino|rider|09201230004|ronald.aquino@mobites.ph|Manila|bicycle||active|2025-06-15|
+S05|Dennis Pascual|rider|09211230005|dennis.pascual@mobites.ph|Pasig|motorcycle|PQR 1357|off-duty|2025-07-01|
+S06|Arnel Domingo|rider|09221230006|arnel.domingo@mobites.ph|Mandaluyong|motorcycle|STU 9753|active|2025-08-18|
+S07|Rico Salazar|rider|09231230007|rico.salazar@mobites.ph|Parañaque|car|XYZ 8642|on-leave|2025-09-09|
+S08|Noel Gonzales|rider|09241230008|noel.gonzales@mobites.ph|Marikina|motorcycle|GHJ 3141|active|2026-01-14|
+S09|Liza Mercado|dispatcher|09251230009|liza.mercado@mobites.ph|Quezon City|||active|2025-02-10|
+S10|Grace Ocampo|support|09261230010|grace.ocampo@mobites.ph|Makati|||active|2025-02-24|
+S11|Joy Valdez|support|09271230011|joy.valdez@mobites.ph|Manila|||off-duty|2025-10-05|
+S12|Ramon Cruz|operations|09281230012|ramon.cruz@mobites.ph|Taguig|||active|2025-01-06|

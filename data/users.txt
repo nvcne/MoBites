@@ -1,17 +1,17 @@
 # USERS TABLE
 # Edit this file in Notepad. One record per line. Columns are separated by | (do not use | inside a value).
 # Lines starting with # are notes and are ignored. Save as UTF-8 (File > Save As > Encoding: UTF-8).
-# password_sha256 = SHA-256 hash of the password, never the plain password. Sample users all use the demo password in README.md.
+# password_sha256 = SHA-256 hash of the password, never the plain password. Only the demo customer (README.md) can log in; blank = sample customer with no login.
 # phone = 11-digit PH mobile number starting with 09.
 # alt_phones = extra contact numbers, separated by ; (the main phone can't be changed). allergies = separated by ;
 email|name|password_sha256|phone|alt_phones|address|allergies|points|since
 pedro.dinorobo@email.com|Pedro P. (Penduko) Dinorobo|e57747716ef7852bf92307bd8b9e1e562c4aaabb5dc0a3eaf8bf533b4cf53bd0|09171234567|09281234567|Maginhawa St, Teachers Village, Quezon City|Shellfish|1250|2025
-andrea.reyes@email.com|Andrea Reyes|e57747716ef7852bf92307bd8b9e1e562c4aaabb5dc0a3eaf8bf533b4cf53bd0|09181112233||Kalayaan Ave, Poblacion, Makati||640|2025
-miguel.bautista@email.com|Miguel Bautista|e57747716ef7852bf92307bd8b9e1e562c4aaabb5dc0a3eaf8bf533b4cf53bd0|09952223344||5th Ave, BGC, Taguig|Peanuts;Milk|2100|2024
-kristine.garcia@email.com|Kristine Garcia|e57747716ef7852bf92307bd8b9e1e562c4aaabb5dc0a3eaf8bf533b4cf53bd0|09663334455||España Blvd, Sampaloc, Manila||320|2026
-paolo.mendoza@email.com|Paolo Mendoza|e57747716ef7852bf92307bd8b9e1e562c4aaabb5dc0a3eaf8bf533b4cf53bd0|09174445566||East Capitol Dr, Kapitolyo, Pasig||980|2025
-camille.flores@email.com|Camille Flores|e57747716ef7852bf92307bd8b9e1e562c4aaabb5dc0a3eaf8bf533b4cf53bd0|09285556677||Shaw Blvd, Mandaluyong||150|2026
-rafael.villanueva@email.com|Rafael Villanueva|e57747716ef7852bf92307bd8b9e1e562c4aaabb5dc0a3eaf8bf533b4cf53bd0|09176667788||Ortigas Ave, Greenhills, San Juan||1720|2024
-bea.castillo@email.com|Bea Castillo|e57747716ef7852bf92307bd8b9e1e562c4aaabb5dc0a3eaf8bf533b4cf53bd0|09997778899||Gil Fernando Ave, Marikina|Eggs|860|2025
-carlo.ramos@email.com|Carlo Ramos|e57747716ef7852bf92307bd8b9e1e562c4aaabb5dc0a3eaf8bf533b4cf53bd0|09158889900||Aguirre Ave, BF Homes, Parañaque||410|2026
-jasmine.torres@email.com|Jasmine Torres|e57747716ef7852bf92307bd8b9e1e562c4aaabb5dc0a3eaf8bf533b4cf53bd0|09209990011||Alabang-Zapote Rd, Las Piñas||2890|2023
+andrea.reyes@email.com|Andrea Reyes||09181112233||Kalayaan Ave, Poblacion, Makati||640|2025
+miguel.bautista@email.com|Miguel Bautista||09952223344||5th Ave, BGC, Taguig|Peanuts;Milk|2100|2024
+kristine.garcia@email.com|Kristine Garcia||09663334455||España Blvd, Sampaloc, Manila||320|2026
+paolo.mendoza@email.com|Paolo Mendoza||09174445566||East Capitol Dr, Kapitolyo, Pasig||980|2025
+camille.flores@email.com|Camille Flores||09285556677||Shaw Blvd, Mandaluyong||150|2026
+rafael.villanueva@email.com|Rafael Villanueva||09176667788||Ortigas Ave, Greenhills, San Juan||1720|2024
+bea.castillo@email.com|Bea Castillo||09997778899||Gil Fernando Ave, Marikina|Eggs|860|2025
+carlo.ramos@email.com|Carlo Ramos||09158889900||Aguirre Ave, BF Homes, Parañaque||410|2026
+jasmine.torres@email.com|Jasmine Torres||09209990011||Alabang-Zapote Rd, Las Piñas||2890|2023

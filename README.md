@@ -20,12 +20,14 @@ Then open **http://127.0.0.1:5173**. Stop it with `Ctrl + C`. To use another por
 | | Value |
 |---|---|
 | Demo login | **Pedro P. (Penduko) Dinorobo**: `pedro.dinorobo@email.com` / `Mobites#2026` |
-| Rider login | Open **#/rider** (or **Riders** in the footer): `juan.delacruz@mobites.ph` / `Rider#2026` (every sample rider uses this password) |
+| Rider login | Open **#/rider** (or **Riders** in the footer): **Juan Dela Cruz**: `juan.delacruz@mobites.ph` / `Rider#2026` |
 | Admin login | Open **#/admin** (or **Admin** in the footer): `admin@mobites.ph` / `Admin#2026` |
 | Demo inbox | **#/inbox**: copies of every email the site sends (codes, receipts), for when real email isn't set up |
 | Promo code | `MOBICNE`: ₱50 off orders of ₱300 or more |
 | Test card | `4242 4242 4242 4242`, any future expiry (e.g. `12/29`), any CVC. Add it under **My account → Payment methods** |
 | GCash / Maya MPIN | Any 4 digits (it's a pretend approval screen) |
+
+These are the **only** accounts that can log in: one per role, each with its own password. The other sample customers and staff are there to fill the tables, so their password column is blank and they can't log in or reset a password. Riders hired from the admin page get their own temporary password.
 
 ## Where to edit the restaurants (templates)
 
